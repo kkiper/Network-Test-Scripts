@@ -24,30 +24,61 @@ device — and each *unused* patch-panel port — is actually on the expected sw
 
 ## Describing the expected interconnect
 
-Create a CSV (Excel can save one) with one row per patch-panel port. See
-[`examples/expected_interconnect.csv`](examples/expected_interconnect.csv).
+Create a JSON file with a top-level object containing a `connections` list, with one
+entry per patch-panel port. See
+[`examples/expected_interconnect.json`](examples/expected_interconnect.json).
 
-| Column         | Required | Description                                                     |
-|----------------|----------|-----------------------------------------------------------------|
-| `patch_panel`  |          | Patch panel name, e.g. `PP-A`                                   |
-| `panel_port`   |          | Port on the patch panel                                         |
-| `switch`       |          | Switch the panel port is cabled to                              |
-| `switch_port`  |          | Switch port, e.g. `Gi1/0/1`                                     |
-| `device`       |          | Name of the device that should be on the far end                |
-| `ip`           |          | Device IP address (blank = can't be pinged, row is skipped)     |
-| `expected_mac` |          | Expected MAC; any common format (`aa:bb:..`, `AA-BB-..`, `aabb.ccdd.eeff`) |
-| `status`       | yes      | `connected` or `unused`                                         |
-| `notes`        |          | Free text                                                       |
+```json
+{
+  "description": "Building 1, comms room",
+  "connections": [
+    {
+      "patch_panel": "PP-A",
+      "panel_port": 1,
+      "switch": "SW-CORE-01",
+      "switch_port": "Gi1/0/1",
+      "device": "Firewall-01",
+      "ip": "192.168.1.1",
+      "expected_mac": "00:1a:2b:3c:4d:01",
+      "status": "connected",
+      "notes": "Default gateway"
+    },
+    {
+      "patch_panel": "PP-A",
+      "panel_port": 5,
+      "switch": "SW-CORE-01",
+      "switch_port": "Gi1/0/5",
+      "status": "unused"
+    }
+  ]
+}
+```
 
-Lines starting with `#` are comments. Extra columns are allowed and carried through
-to the baseline file. The file is validated before testing; bad IPs/MACs, unknown
-statuses, unused ports with IPs, and duplicate IPs, MACs, panel ports or switch ports
-are all reported with their line numbers.
+Connection fields (all optional; omit or use `null` for "not set"):
+
+| Field          | Description                                                     |
+|----------------|-----------------------------------------------------------------|
+| `patch_panel`  | Patch panel name, e.g. `"PP-A"`                                 |
+| `panel_port`   | Port on the patch panel (string or number)                      |
+| `switch`       | Switch the panel port is cabled to                              |
+| `switch_port`  | Switch port, e.g. `"Gi1/0/1"`                                   |
+| `device`       | Name of the device that should be on the far end                |
+| `ip`           | Device IP address (omitted = can't be pinged, entry is skipped) |
+| `expected_mac` | Expected MAC; any common format (`aa:bb:..`, `AA-BB-..`, `aabb.ccdd.eeff`) |
+| `status`       | `"connected"` (default) or `"unused"`                           |
+| `notes`        | Free text                                                       |
+
+JSON has no comments, so use `notes` or any extra field you like (e.g. `"cable_id"`).
+Extra fields, and extra top-level keys such as `description`, are ignored by the
+tests and preserved in the baseline file. The file is validated before testing:
+JSON syntax errors are reported with line/column, and bad IPs/MACs, unknown
+statuses, unused ports with IPs, and duplicate IPs, MACs, panel ports or switch
+ports are all reported together, identified as `connection #N (panel:port)`.
 
 ## Running
 
 ```sh
-python interconnect_test.py examples/expected_interconnect.csv
+python interconnect_test.py examples/expected_interconnect.json
 ```
 
 Useful options:
@@ -57,8 +88,8 @@ Useful options:
 -t, --timeout SECONDS    wait per ping reply (default 1.0)
 -w, --workers N          devices tested in parallel (default 16)
 -o, --output FILE        write a report; .json for JSON, anything else is CSV
---write-baseline FILE    write a copy of the inventory with blank expected_mac
-                         values filled in from the discovered MACs
+--write-baseline FILE    write a copy of the inventory JSON with missing
+                         expected_mac values filled in from the discovered MACs
 --switch NAME            only test rows on this switch (repeatable)
 --patch-panel NAME       only test rows on this patch panel (repeatable)
 -q, --quiet              no per-device progress
@@ -69,11 +100,14 @@ Exit codes: `0` no failures, `1` at least one FAIL, `2` invalid input / ping not
 
 ### Recording MACs for the first time
 
-If you don't know the MACs yet, leave `expected_mac` blank, then:
+If you don't know the MACs yet, leave `expected_mac` out, then:
 
 ```sh
-python interconnect_test.py my_network.csv --write-baseline my_network.baseline.csv
+python interconnect_test.py my_network.json --write-baseline my_network.baseline.json
 ```
+
+Only missing MACs are filled in; a MAC that doesn't match is reported as a FAIL and
+never overwritten.
 
 Check the baseline file is right, then use it as your expected interconnect from then on.
 
@@ -96,7 +130,7 @@ python -m unittest discover -s tests -t .
 
 ```text
 interconnect_test.py      entry point
-netcheck/inventory.py     CSV loading and validation
+netcheck/inventory.py     JSON loading and validation
 netcheck/ping.py          cross-platform ping
 netcheck/mac.py           MAC normalisation and ARP/neighbour-table lookup
 netcheck/checker.py       runs the checks and grades each connection

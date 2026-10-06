@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import tempfile
 import textwrap
@@ -13,15 +14,15 @@ from netcheck.checker import (
 from netcheck.cli import main
 from netcheck.inventory import Connection, InventoryError, load_inventory
 from netcheck.ping import PingResult, build_ping_command, parse_ping_output
-from netcheck.report import print_table, write_baseline
 
-EXAMPLE = os.path.join(os.path.dirname(__file__), "..", "examples", "expected_interconnect.csv")
+EXAMPLE = os.path.join(os.path.dirname(__file__), "..", "examples", "expected_interconnect.json")
 
 
-def write_tmp(text):
-    fd, path = tempfile.mkstemp(suffix=".csv")
+def write_tmp(data):
+    """Write ``data`` (JSON-serialisable, or raw text) to a temporary .json file."""
+    fd, path = tempfile.mkstemp(suffix=".json")
     with os.fdopen(fd, "w") as fh:
-        fh.write(textwrap.dedent(text).lstrip())
+        fh.write(data if isinstance(data, str) else json.dumps(data))
     return path
 
 
@@ -121,33 +122,55 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(conns[3].expected_mac, "00:1a:2b:3c:4d:50")
         self.assertEqual(sum(c.status == "unused" for c in conns), 2)
 
-    def test_reports_all_errors_with_line_numbers(self):
-        path = write_tmp("""
-            # comment
-            patch_panel,panel_port,switch,switch_port,device,ip,expected_mac,status
-            PP,1,SW,1,a,10.0.0.1,bad-mac,connected
-            PP,2,SW,2,b,10.0.0.999,,connected
-            PP,3,SW,3,c,10.0.0.3,,connected
-            PP,4,SW,4,,10.0.0.4,,unused
-            PP,5,SW,5,e,10.0.0.5,,maybe
-            PP,3,SW,6,f,10.0.0.3,,connected
-        """)
+    def test_reports_all_errors(self):
+        def entry(port, ip, mac="", status="connected"):
+            return {"patch_panel": "PP", "panel_port": port, "switch": "SW",
+                    "switch_port": f"Gi{port}", "device": f"d{port}", "ip": ip,
+                    "expected_mac": mac, "status": status}
+        path = write_tmp({"connections": [
+            entry(1, "10.0.0.1", mac="bad-mac"),
+            entry(2, "10.0.0.999"),
+            entry(3, "10.0.0.3"),
+            entry(4, "10.0.0.4", status="unused"),
+            entry(5, "10.0.0.5", status="maybe"),
+            dict(entry(3, "10.0.0.3"), switch_port="Gi6"),
+            "not an object",
+            dict(entry(8, "10.0.0.8"), device=["a", "list"]),
+        ]})
         self.addCleanup(os.remove, path)
         with self.assertRaises(InventoryError) as ctx:
             load_inventory(path)
         msg = str(ctx.exception)
-        self.assertIn("line 3: 'bad-mac'", msg)
-        self.assertIn("line 4: '10.0.0.999'", msg)
-        self.assertIn("line 8: duplicate IP address '10.0.0.3' (also on line 5)", msg)
-        self.assertIn("line 8: duplicate patch panel port 'PP:3' (also on line 5)", msg)
-        self.assertIn("line 6: unused connection", msg)
-        self.assertIn("line 7: status 'maybe'", msg)
+        self.assertIn("connection #1 (PP:1): 'bad-mac' is not a valid MAC", msg)
+        self.assertIn("connection #2 (PP:2): '10.0.0.999'", msg)
+        self.assertIn("connection #4 (PP:4): unused connection", msg)
+        self.assertIn("connection #5 (PP:5): status 'maybe'", msg)
+        self.assertIn("connection #6: duplicate IP address '10.0.0.3' (also on connection #3)", msg)
+        self.assertIn("connection #6: duplicate patch panel port 'PP:3' (also on connection #3)", msg)
+        self.assertIn("connection #7: must be an object", msg)
+        self.assertIn('connection #8 (PP:8): "device" must be a string or number', msg)
 
-    def test_missing_status_column(self):
-        path = write_tmp("device,ip\na,10.0.0.1\n")
+    def test_numeric_ports_and_missing_fields(self):
+        path = write_tmp({"connections": [{"panel_port": 7, "ip": "10.0.0.7"}]})
         self.addCleanup(os.remove, path)
-        with self.assertRaises(InventoryError):
-            load_inventory(path)
+        conn = load_inventory(path)[0]
+        self.assertEqual(conn.panel_port, "7")
+        self.assertEqual(conn.status, "connected")
+        self.assertIsNone(conn.expected_mac)
+
+    def test_structure_errors(self):
+        for data, expected in [
+            ('{"connections": [', "invalid JSON at line 1"),
+            ([], 'top level must be an object with a "connections" list'),
+            ({"devices": []}, 'top level must be an object with a "connections" list'),
+            ({"connections": {}}, '"connections" must be a list'),
+            ({"connections": []}, "no connections defined"),
+        ]:
+            path = write_tmp(data)
+            self.addCleanup(os.remove, path)
+            with self.assertRaises(InventoryError) as ctx:
+                load_inventory(path)
+            self.assertIn(expected, str(ctx.exception))
 
 
 def fake_ping(results):
@@ -163,7 +186,7 @@ class CheckerTests(unittest.TestCase):
                          mac_fn=lambda ip: mac)[0]
 
     def conn(self, **kw):
-        base = dict(line=2, device="dev", ip="10.0.0.1", expected_mac="00:00:00:00:00:01")
+        base = dict(index=1, device="dev", ip="10.0.0.1", expected_mac="00:00:00:00:00:01")
         base.update(kw)
         return Connection(**base)
 
@@ -207,7 +230,7 @@ class EndToEndTests(unittest.TestCase):
         }
         tmpdir = tempfile.mkdtemp()
         report = os.path.join(tmpdir, "report.csv")
-        baseline = os.path.join(tmpdir, "baseline.csv")
+        baseline = os.path.join(tmpdir, "baseline.json")
         out = io.StringIO()
         with mock.patch("netcheck.checker.ping", fake_ping(pings)), \
                 mock.patch("netcheck.cli.shutil.which", return_value="/bin/ping"), \
@@ -227,6 +250,13 @@ class EndToEndTests(unittest.TestCase):
             self.assertEqual(len(fh.readlines()), 9)
         conns = load_inventory(baseline)
         self.assertEqual(conns[2].expected_mac, "00:1a:2b:3c:4d:11")
+        # Everything else in the original file is preserved untouched.
+        with open(EXAMPLE) as fh:
+            original = json.load(fh)
+        with open(baseline) as fh:
+            updated = json.load(fh)
+        original["connections"][2]["expected_mac"] = "00:1a:2b:3c:4d:11"
+        self.assertEqual(updated, original)
 
 
 if __name__ == "__main__":

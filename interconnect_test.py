@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Verify a local network against its expected physical interconnect.
 
-Usage:  python interconnect_test.py examples/expected_interconnect.csv
+Usage:  python interconnect_test.py examples/expected_interconnect.json
 """
 
 import sys

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import TextIO
 
 from .checker import FAIL, MAC_DISCOVERED, PASS, SKIP, WARN, CheckResult
-from .inventory import KNOWN_COLUMNS
+from .inventory import read_json
 
 REPORT_COLUMNS = (
     "result",
@@ -111,37 +111,21 @@ def write_report(results: list[CheckResult], path: str, inventory_path: str) -> 
         write_csv(results, path)
 
 
-def write_baseline(results: list[CheckResult], path: str) -> int:
-    """Write the inventory back out with blank expected MACs filled from discovery.
+def write_baseline(results: list[CheckResult], inventory_path: str, path: str) -> int:
+    """Write a copy of the inventory JSON with blank expected MACs filled from discovery.
 
-    Returns the number of MACs that were filled in. Review the file before
-    adopting it as the new expected interconnect.
+    Everything else in the original file is preserved. Returns the number of
+    MACs that were filled in. Review the file before adopting it as the new
+    expected interconnect.
     """
-    extra_cols: list[str] = []
-    for res in results:
-        for key in res.connection.extra:
-            if key not in extra_cols:
-                extra_cols.append(key)
+    data = read_json(inventory_path)
+    entries = data["connections"]
     filled = 0
-    with open(path, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=list(KNOWN_COLUMNS) + extra_cols)
-        writer.writeheader()
-        for res in results:
-            c = res.connection
-            mac = c.expected_mac or ""
-            if res.mac_check == MAC_DISCOVERED and res.discovered_mac:
-                mac = res.discovered_mac
-                filled += 1
-            writer.writerow({
-                "patch_panel": c.patch_panel,
-                "panel_port": c.panel_port,
-                "switch": c.switch,
-                "switch_port": c.switch_port,
-                "device": c.device,
-                "ip": c.ip,
-                "expected_mac": mac,
-                "status": c.status,
-                "notes": c.notes,
-                **c.extra,
-            })
+    for res in results:
+        if res.mac_check == MAC_DISCOVERED and res.discovered_mac:
+            entries[res.connection.index - 1]["expected_mac"] = res.discovered_mac
+            filled += 1
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+        fh.write("\n")
     return filled

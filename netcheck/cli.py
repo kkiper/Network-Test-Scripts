@@ -26,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
             "ping each connected device and verify its MAC address."
         ),
     )
-    parser.add_argument("inventory", help="CSV file describing the expected interconnect")
+    parser.add_argument("inventory", help="JSON file describing the expected interconnect")
     parser.add_argument("-c", "--count", type=int, default=2,
                         help="ping packets per device (default: 2)")
     parser.add_argument("-t", "--timeout", type=float, default=1.0,
@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="devices to test in parallel (default: 16)")
     parser.add_argument("-o", "--output",
                         help="write a report file (.csv or .json, chosen by extension)")
-    parser.add_argument("--write-baseline", metavar="CSV",
+    parser.add_argument("--write-baseline", metavar="JSON",
                         help="write a copy of the inventory with blank expected_mac "
                              "values filled in from discovered MACs")
     parser.add_argument("--switch", action="append", metavar="NAME",
@@ -100,7 +100,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         write_report(results, args.output, args.inventory)
         print(f"Report written to {args.output}")
     if args.write_baseline:
-        filled = write_baseline(results, args.write_baseline)
+        filled = write_baseline(results, args.inventory, args.write_baseline)
         print(f"Baseline written to {args.write_baseline} ({filled} MAC(s) filled in)")
 
     return EXIT_FAILURES if any(r.result == FAIL for r in results) else EXIT_OK

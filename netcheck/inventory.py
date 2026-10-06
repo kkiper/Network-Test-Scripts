@@ -1,11 +1,11 @@
-"""Load and validate the expected physical interconnect (CSV)."""
+"""Load and validate the expected physical interconnect (JSON)."""
 
 from __future__ import annotations
 
-import csv
 import ipaddress
+import json
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 from .mac import normalize_mac
 
@@ -13,8 +13,7 @@ STATUS_CONNECTED = "connected"
 STATUS_UNUSED = "unused"
 VALID_STATUSES = (STATUS_CONNECTED, STATUS_UNUSED)
 
-REQUIRED_COLUMNS = ("status",)
-KNOWN_COLUMNS = (
+KNOWN_FIELDS = (
     "patch_panel",
     "panel_port",
     "switch",
@@ -35,7 +34,7 @@ class InventoryError(Exception):
 class Connection:
     """One expected link: patch panel port <-> switch port <-> device."""
 
-    line: int
+    index: int  # 1-based position in the file's "connections" list
     patch_panel: str = ""
     panel_port: str = ""
     switch: str = ""
@@ -53,7 +52,19 @@ class Connection:
             return self.device
         if self.patch_panel or self.panel_port:
             return f"{self.patch_panel}:{self.panel_port}"
-        return f"line {self.line}"
+        return f"connection #{self.index}"
+
+
+def read_json(path: str) -> Any:
+    try:
+        with open(path, encoding="utf-8-sig") as fh:
+            return json.load(fh)
+    except OSError as exc:
+        raise InventoryError(f"Cannot open inventory file: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise InventoryError(
+            f"{path}: invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}"
+        ) from exc
 
 
 def load_inventory(path: str) -> list[Connection]:
@@ -61,83 +72,86 @@ def load_inventory(path: str) -> list[Connection]:
 
     All problems found are reported together so the file can be fixed in one pass.
     """
-    try:
-        fh = open(path, newline="", encoding="utf-8-sig")
-    except OSError as exc:
-        raise InventoryError(f"Cannot open inventory file: {exc}") from exc
+    data = read_json(path)
+    if not isinstance(data, dict) or "connections" not in data:
+        raise InventoryError(f'{path}: top level must be an object with a "connections" list')
+    entries = data["connections"]
+    if not isinstance(entries, list):
+        raise InventoryError(f'{path}: "connections" must be a list')
+    if not entries:
+        raise InventoryError(f"{path}: no connections defined")
 
-    headers: Optional[list[str]] = None
     errors: list[str] = []
     connections: list[Connection] = []
-    with fh:
-        reader = csv.reader(fh)
-        for cells in reader:
-            # Skip blank lines and comment lines (first cell starts with '#').
-            if not any(c.strip() for c in cells) or cells[0].lstrip().startswith("#"):
-                continue
-            if headers is None:
-                headers = [c.strip().lower() for c in cells]
-                missing = [c for c in REQUIRED_COLUMNS if c not in headers]
-                if missing:
-                    raise InventoryError(
-                        f"{path}: missing required column(s): {', '.join(missing)}"
-                    )
-                continue
-            row = {h: (cells[i].strip() if i < len(cells) else "") for i, h in enumerate(headers)}
-            conn, row_errors = _parse_row(row, reader.line_num)
-            errors.extend(row_errors)
-            if conn:
-                connections.append(conn)
-
-    if headers is None:
-        raise InventoryError(f"{path}: file is empty")
+    for index, entry in enumerate(entries, start=1):
+        conn, entry_errors = _parse_entry(entry, index)
+        errors.extend(entry_errors)
+        if conn:
+            connections.append(conn)
 
     errors.extend(_check_duplicates(connections))
     if errors:
         raise InventoryError(f"{path}: invalid inventory:\n  " + "\n  ".join(errors))
-    if not connections:
-        raise InventoryError(f"{path}: no connections defined")
     return connections
 
 
-def _parse_row(row: dict, line: int) -> tuple[Optional[Connection], list[str]]:
-    errors = []
-    status = row.get("status", "").lower() or STATUS_CONNECTED
+def _text(entry: dict, key: str, errors: list[str]) -> str:
+    """Return ``entry[key]`` as a stripped string; numbers are allowed (e.g. port 1)."""
+    value = entry.get(key)
+    if value is None:
+        return ""
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        errors.append(f'"{key}" must be a string or number')
+        return ""
+    return str(value).strip()
+
+
+def _parse_entry(entry: Any, index: int) -> tuple[Optional[Connection], list[str]]:
+    where = f"connection #{index}"
+    if not isinstance(entry, dict):
+        return None, [f"{where}: must be an object"]
+    type_errors: list[str] = []
+    fields = {key: _text(entry, key, type_errors) for key in KNOWN_FIELDS}
+    if fields["patch_panel"] or fields["panel_port"]:
+        where += f" ({fields['patch_panel']}:{fields['panel_port']})"
+    errors = [f"{where}: {e}" for e in type_errors]
+
+    status = fields["status"].lower() or STATUS_CONNECTED
     if status not in VALID_STATUSES:
         errors.append(
-            f"line {line}: status '{row.get('status')}' must be one of {', '.join(VALID_STATUSES)}"
+            f"{where}: status '{fields['status']}' must be one of {', '.join(VALID_STATUSES)}"
         )
 
-    ip = row.get("ip", "")
+    ip = fields["ip"]
     if ip:
         try:
             ip = str(ipaddress.ip_address(ip))
         except ValueError:
-            errors.append(f"line {line}: '{ip}' is not a valid IP address")
+            errors.append(f"{where}: '{ip}' is not a valid IP address")
 
-    raw_mac = row.get("expected_mac", "")
+    raw_mac = fields["expected_mac"]
     mac = normalize_mac(raw_mac)
     if raw_mac and mac is None:
-        errors.append(f"line {line}: '{raw_mac}' is not a valid MAC address")
+        errors.append(f"{where}: '{raw_mac}' is not a valid MAC address")
 
     if status == STATUS_UNUSED and ip:
-        errors.append(f"line {line}: unused connection should not have an IP address")
+        errors.append(f"{where}: unused connection should not have an IP address")
 
     if errors:
         return None, errors
 
     conn = Connection(
-        line=line,
-        patch_panel=row.get("patch_panel", ""),
-        panel_port=row.get("panel_port", ""),
-        switch=row.get("switch", ""),
-        switch_port=row.get("switch_port", ""),
-        device=row.get("device", ""),
+        index=index,
+        patch_panel=fields["patch_panel"],
+        panel_port=fields["panel_port"],
+        switch=fields["switch"],
+        switch_port=fields["switch_port"],
+        device=fields["device"],
         ip=ip,
         expected_mac=mac,
         status=status,
-        notes=row.get("notes", ""),
-        extra={k: v for k, v in row.items() if k not in KNOWN_COLUMNS},
+        notes=fields["notes"],
+        extra={k: v for k, v in entry.items() if k not in KNOWN_FIELDS},
     )
     return conn, []
 
@@ -161,8 +175,9 @@ def _check_duplicates(connections: list[Connection]) -> list[str]:
             if value in seen:
                 shown = ":".join(value) if isinstance(value, tuple) else value
                 errors.append(
-                    f"line {conn.line}: duplicate {name} '{shown}' (also on line {seen[value]})"
+                    f"connection #{conn.index}: duplicate {name} '{shown}' "
+                    f"(also on connection #{seen[value]})"
                 )
             else:
-                seen[value] = conn.line
+                seen[value] = conn.index
     return errors
