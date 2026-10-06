@@ -30,6 +30,8 @@ REPORT_COLUMNS = (
     "seen_switch",
     "seen_port",
     "cable_test",
+    "optics",
+    "link_errors",
     "message",
 )
 
@@ -58,6 +60,8 @@ def result_row(res: CheckResult) -> dict:
         "seen_switch": pc.seen_switch if pc else "",
         "seen_port": pc.seen_port if pc else "",
         "cable_test": pc.cable_test if pc else "",
+        "optics": pc.optics if pc else "",
+        "link_errors": pc.errors if pc else "",
         "message": res.message,
     }
 

@@ -24,9 +24,9 @@ STATUS_HEADER = (
 
 
 def status_line(port, status="connected", vlan="routed", duplex="a-full", speed="a-1000",
-                name=""):
+                name="", media="10/100/1000BaseTX"):
     return (f"{port:<13}{name:<19}{status:<13}{vlan:<11}{duplex:>6} {speed:>6} "
-            "10/100/1000BaseTX\n")
+            f"{media}\n")
 
 
 def cdp_entry(device, local, remote, platform="cisco ESS-3300"):
@@ -313,7 +313,7 @@ class VerifyBatchTests(unittest.TestCase):
 
         pc = results[0].port_check
         self.assertEqual((pc.test_port, pc.link, pc.seen_switch, pc.seen_port, pc.protocol),
-                         ("Gi1/0/1", "up 1000 Mb/s", "sw-core-01", "Gi1/5", "CDP"))
+                         ("Gi1/0/1", "up 1 Gb/s", "sw-core-01", "Gi1/5", "CDP"))
         self.assertEqual(session.commands[:2], ["clear cdp table", "clear lldp table"])
         # The silent port keeps us waiting until the timeout.
         self.assertGreaterEqual(clock.now, 60)
@@ -388,8 +388,10 @@ class CliTests(unittest.TestCase):
         self.assertIn("Patched to sw-core-01 Gi1/0/9, expected SW-CORE-01 Gi1/0/6", text)
         with open(report) as fh:
             rows = json.load(fh)["results"]
+        # The fiber channels are skipped: this run gave no fiber (SFP+) test ports.
         self.assertEqual([(r["panel_port"], r["result"], r["seen_port"]) for r in rows],
-                         [("5", PASS, "Gi1/0/5"), ("6", FAIL, "Gi1/0/9")])
+                         [("5", PASS, "Gi1/0/5"), ("6", FAIL, "Gi1/0/9"),
+                          ("1", SKIP, ""), ("2", SKIP, "")])
 
 
 if __name__ == "__main__":

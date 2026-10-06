@@ -40,7 +40,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("inventory", help="JSON file describing the expected interconnect")
     parser.add_argument("--host", help="test switch management IP / hostname")
     parser.add_argument("--username", help="test switch SSH username")
-    parser.add_argument("--ports", help="test switch ports to use, e.g. 'Gi1/0/1-23'")
+    parser.add_argument("--ports", help="copper test ports to use, e.g. 'Gi1/0/1-23'")
+    parser.add_argument("--fiber-ports",
+                        help="SFP+ test ports for fiber runs, e.g. 'Te1/1/1-2'")
+    parser.add_argument("--fiber-soak", type=float,
+                        help="seconds to watch each fiber link for errors (default 60)")
     parser.add_argument("--timeout", type=float,
                         help="seconds to wait for CDP/LLDP per batch (default 90)")
     parser.add_argument("--cable-test", action="store_true", default=None,
@@ -67,6 +71,10 @@ def apply_args(settings: TestSwitchSettings, args) -> None:
         settings.username = args.username
     if args.ports:
         settings.ports = expand_port_range(args.ports)
+    if args.fiber_ports:
+        settings.fiber_ports = expand_port_range(args.fiber_ports)
+    if args.fiber_soak is not None:
+        settings.fiber_soak = args.fiber_soak
     if args.timeout is not None:
         settings.cdp_timeout = args.timeout
     if args.cable_test:
@@ -104,18 +112,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.patch_panel:
         wanted = {p.lower() for p in args.patch_panel}
         connections = [c for c in connections if c.patch_panel.lower() in wanted]
-    if not settings.ports:
-        print("error: no test switch ports given (use --ports, e.g. 'Gi1/0/1-23')",
-              file=sys.stderr)
+    if not settings.ports and not settings.fiber_ports:
+        print("error: no test switch ports given (use --ports, e.g. 'Gi1/0/1-23', and/or "
+              "--fiber-ports, e.g. 'Te1/1/1-2')", file=sys.stderr)
         return EXIT_BAD_INPUT
 
-    batches, results = plan_batches(connections, settings.ports)
+    batches, results = plan_batches(connections, settings.ports, settings.fiber_ports)
     runs = sum(len(b) for b in batches)
     if not runs:
         print("No unused runs with a switch port to verify.")
         return EXIT_OK
-    print(f"{runs} unused run(s) to verify in {len(batches)} batch(es) of up to "
-          f"{len(settings.ports)} using test switch {settings.host or '?'}.")
+    print(f"{runs} unused run(s) to verify in {len(batches)} batch(es) using test switch "
+          f"{settings.host or '?'}.")
 
     password = os.environ.get(PASSWORD_ENV) or getpass.getpass(
         f"Password for {settings.username or '?'}@{settings.host or '?'}: ")

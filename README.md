@@ -20,6 +20,9 @@ Everything is available from the desktop GUI (`interconnect_gui.py`) or the comm
   never logged into or reconfigured.
 - Flag runs with no link, a degraded link speed, or (optionally) a cable fault found by
   the switch's TDR cable test.
+- **Fiber (SFP+) runs:** check each channel links at the expected speed (e.g. 10G), that the
+  transceiver light levels are within the module's limits, and that no errors occur while
+  the link is watched. If there's no link, report whether the strands are probably reversed.
 
 Every patch-panel port is reported as PASS / FAIL / WARN / SKIP, on screen and as CSV or JSON.
 
@@ -35,7 +38,7 @@ port of each *connected* device from the MAC address table, and to check ports t
 - Run it from a machine on the **same subnet/VLAN** as the devices: MAC addresses are
   only visible via ARP for hosts on the local layer-2 segment. Devices behind a router
   will ping fine but show `UNRESOLVED` MACs (reported as WARN).
-- Unused-run verification only: a Cisco IOS XE test switch (e.g. Catalyst 9200) and the
+- Unused-run verification only: a Cisco IOS XE test switch (e.g. Catalyst C9200L-24T-4X-E; its 10G SFP+ uplinks are needed for fiber runs) and the
   Netmiko package: `pip install -r requirements.txt`.
 
 ## Desktop GUI
@@ -108,7 +111,7 @@ pip install -r requirements.txt
 python port_verify.py my_network.json --host 192.168.100.2 --username admin --ports Gi1/0/1-23
 ```
 
-Options: `--cable-test` (TDR), `--timeout SECONDS`, `--switch NAME` / `--patch-panel NAME`
+Options: `--fiber-ports Te1/1/1-2` and `--fiber-soak SECONDS` for fiber runs, `--cable-test` (TDR), `--timeout SECONDS`, `--switch NAME` / `--patch-panel NAME`
 filters, `-o report.csv`. The password can also come from `$NETCHECK_SWITCH_PASSWORD`, and an
 enable secret from `$NETCHECK_ENABLE_SECRET`. Settings can be stored in the inventory instead
 (see `test_switch` below).
@@ -118,7 +121,38 @@ enable secret from `$NETCHECK_ENABLE_SECRET`. Settings can be stored in the inve
 | PASS | Neighbour heard on the expected production switch and port. |
 | FAIL | Heard on a **different** switch or port (the message says which), or no link at all: check the test cable, the run, or whether the production port is shut down. |
 | WARN | Right port but the link negotiated below 1 Gb/s or the cable test found a fault; or link up but no CDP/LLDP heard (CDP may be disabled on that production switch). |
-| SKIP | Unused row with no `switch_port` to compare against. |
+| SKIP | Unused row with no `switch_port` to compare against, or a fiber run when no fiber test ports are set. |
+
+### Fiber (SFP+) channels
+
+Fiber runs, such as the multimode channels to the production switch's SFP+ ports, are tested the
+same way, using the test switch's **SFP+ ports**. On a C9200L-24T-4X-E these are the 10G
+uplinks Te1/1/1-4, fitted with 10GBASE-SR modules of the same type as the production end.
+
+1. In the inventory, give each channel `"media": "fiber"` and `"expected_speed": "10G"` (in
+   the GUI, the Media and Expected speed fields). `far_end` can name the fiber end labels,
+   e.g. `"Fiber end P1/S1"`.
+2. Set the **Fiber (SFP+) ports** (`Te1/1/1-2`) in the Verify Unused Ports window, or use
+   `--fiber-ports Te1/1/1-2` or `"fiber_ports"` in `test_switch`. Fiber channels are verified
+   in the same batch as copper runs.
+3. For each channel the tool checks:
+   - it lands on the expected production SFP+ port (CDP);
+   - the link is up at the expected speed: anything slower is a FAIL;
+   - **light levels** (DOM) from `show interfaces transceiver detail`: received power from the
+     production switch, transmit power, temperature, voltage and laser current, against the
+     module's own warning and alarm limits. The receive margin is reported, e.g.
+     `Rx -2.8 dBm, 7.1 dB margin`. Below the warning limit is a WARN; below the alarm limit
+     is a FAIL;
+   - **errors:** the link is watched for 60 s (the *Fiber error check* setting, or
+     `--fiber-soak`), and any receive (CRC/FCS) errors are a WARN.
+4. **No link?** If **no light is received**, the fiber is almost always reversed: swap the P and
+   S strands at one end. If light is received but there's no link, the strand in the other
+   direction is broken or dirty, or the modules don't match.
+
+The DOM readings are a health check, typically accurate to about ±2-3 dB. They don't replace
+certifying the fiber with an optical loss test set. The preflight warns if a module gives no
+DOM readings, or doesn't report as a 10G SFP+. If a third-party module is rejected (the port
+goes err-disabled), see the note at the end of `docs/test_switch_c9200.cfg`.
 
 Notes:
 
@@ -195,11 +229,14 @@ Connection fields (all optional; omit or use `null` for "not set"):
 | `ip`           | Device IP address (omitted = can't be pinged, entry is skipped) |
 | `expected_mac` | Expected MAC; any common format (`aa:bb:..`, `AA-BB-..`, `aabb.ccdd.eeff`) |
 | `status`       | `"connected"` (default) or `"unused"`                           |
+| `media`        | `"copper"` (default) or `"fiber"`: fiber runs use the test switch's SFP+ ports |
+| `expected_speed` | Speed the run must link at when tested, e.g. `"10G"`; slower is a FAIL |
 | `far_end`      | Where to plug the test switch in to reach this run, e.g. `"PP-Z:5"` |
 | `notes`        | Free text                                                       |
 
 The optional `test_switch` section stores the test switch settings: `host`, `username`,
-`ports` (a range string or a list), `cdp_timeout` (seconds, default 90), `cable_test`
+`ports` (a range string or a list), `fiber_ports` (SFP+ test ports for fiber runs),
+`fiber_soak` (seconds to watch fiber links for errors, default 60), `cdp_timeout` (seconds, default 90), `cable_test`
 (default false), `clear_tables` (default true), `allow_switchports` (default false),
 `device_type` (Netmiko type, default `cisco_xe`) and `ssh_port` (default 22). The GUI
 fills it in for you. Passwords are never stored.
@@ -270,7 +307,7 @@ The GUI tests are skipped automatically when Tkinter or a display isn't availabl
 interconnect_gui.py(w)    desktop GUI entry point (.pyw = no console on Windows)
 interconnect_test.py      command-line ping/MAC test
 port_verify.py            command-line unused-run verification with the test switch
-docs/test_switch_c9200.cfg  configuration for the Catalyst 9200 test switch
+docs/test_switch_c9200.cfg  configuration for the Catalyst C9200L test switch
 netcheck/inventory.py     JSON loading and validation
 netcheck/ping.py          cross-platform ping
 netcheck/mac.py           MAC normalisation and ARP/neighbour-table lookup

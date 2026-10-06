@@ -118,9 +118,10 @@ class PingTests(unittest.TestCase):
 class InventoryTests(unittest.TestCase):
     def test_example_loads(self):
         conns = load_inventory(EXAMPLE)
-        self.assertEqual(len(conns), 8)
+        self.assertEqual(len(conns), 10)
         self.assertEqual(conns[3].expected_mac, "00:1a:2b:3c:4d:50")
-        self.assertEqual(sum(c.status == "unused" for c in conns), 2)
+        self.assertEqual(sum(c.status == "unused" for c in conns), 4)
+        self.assertEqual([c.media for c in conns[-2:]], ["fiber", "fiber"])
 
     def test_reports_all_errors(self):
         def entry(port, ip, mac="", status="connected"):
@@ -265,11 +266,11 @@ class EndToEndTests(unittest.TestCase):
 
         self.assertEqual(code, 1)  # the MAC mismatch and unreachable workstation fail
         text = out.getvalue()
-        self.assertIn("3 pass, 2 fail, 0 warn, 3 skipped", text)
+        self.assertIn("3 pass, 2 fail, 0 warn, 5 skipped", text)
         self.assertIn("MAC mismatch", text)
 
         with open(report) as fh:
-            self.assertEqual(len(fh.readlines()), 9)
+            self.assertEqual(len(fh.readlines()), 11)
         conns = load_inventory(baseline)
         self.assertEqual(conns[2].expected_mac, "00:1a:2b:3c:4d:11")
         # Everything else in the original file is preserved untouched.

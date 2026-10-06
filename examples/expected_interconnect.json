@@ -1,9 +1,10 @@
 {
-  "description": "Expected physical interconnect. One entry per patch panel port. status: 'connected' = a device should be patched here; 'unused' = port should be empty. expected_mac may be left out - run with --write-baseline to capture it. far_end (optional) says where to plug the test switch in to reach an unused run.",
+  "description": "Expected physical interconnect. One entry per patch panel port. status: 'connected' = a device should be patched here; 'unused' = port should be empty. expected_mac may be left out - run with --write-baseline to capture it. far_end (optional) says where to plug the test switch in to reach an unused run. Fiber runs: media 'fiber' and expected_speed '10G' are tested on the test switch's SFP+ ports.",
   "test_switch": {
     "host": "192.168.100.2",
     "username": "admin",
     "ports": "Gi1/0/1-23",
+    "fiber_ports": "Te1/1/1-2",
     "cdp_timeout": 90,
     "cable_test": false
   },
@@ -86,6 +87,28 @@
       "device": "Unmanaged-Hub",
       "status": "connected",
       "notes": "No IP - cannot be pinged"
+    },
+    {
+      "patch_panel": "FIBER",
+      "panel_port": 1,
+      "switch": "SW-CORE-01",
+      "switch_port": "Te1/1",
+      "status": "unused",
+      "media": "fiber",
+      "expected_speed": "10G",
+      "far_end": "Fiber end P1/S1",
+      "notes": "4-fiber multimode cable, channel 1; SFP-10GSR-85-I at both ends"
+    },
+    {
+      "patch_panel": "FIBER",
+      "panel_port": 2,
+      "switch": "SW-CORE-01",
+      "switch_port": "Te1/2",
+      "status": "unused",
+      "media": "fiber",
+      "expected_speed": "10G",
+      "far_end": "Fiber end P2/S2",
+      "notes": "4-fiber multimode cable, channel 2; SFP-10GSR-85-I at both ends"
     }
   ]
 }

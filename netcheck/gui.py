@@ -16,7 +16,7 @@ from typing import Optional
 from . import __version__
 from .checker import FAIL, PASS, SKIP, WARN, CheckResult, check_all
 from .inventory import (
-    KNOWN_FIELDS, STATUS_UNUSED, VALID_STATUSES, InventoryError, parse_inventory,
+    KNOWN_FIELDS, STATUS_UNUSED, VALID_MEDIA, VALID_STATUSES, InventoryError, parse_inventory,
     read_json, validate_entry,
 )
 from .report import fill_discovered_macs, result_row, save_json, write_report
@@ -67,6 +67,8 @@ FIELD_LABELS = {
     "ip": "IP address",
     "expected_mac": "Expected MAC",
     "status": "Status",
+    "media": "Media",
+    "expected_speed": "Expected speed",
     "far_end": "Test point",
     "notes": "Notes",
 }
@@ -153,6 +155,29 @@ FIELD_HELP = {
             "the run lands on the expected switch port using the test switch.",
         ],
     },
+    "media": {
+        "what": "What the run is made of: copper (twisted pair) or fiber.",
+        "example": "copper    or    fiber",
+        "tips": [
+            "Defaults to copper.",
+            "Verify Unused Ports connects copper runs to the test switch's copper ports and "
+            "fiber runs to its SFP+ ports (Fiber (SFP+) ports, e.g. Te1/1/1-2).",
+            "For fiber runs it also checks the light levels reported by the SFP+ module, "
+            "watches the link for errors, and, if there's no link, tells you whether the "
+            "strands are probably reversed.",
+        ],
+    },
+    "expected_speed": {
+        "what": "The speed this run must link at when tested with the test switch.",
+        "example": "10G    or    1G    or    100M",
+        "tips": [
+            "A link slower than this is a FAIL, e.g. a 10G fiber channel that only "
+            "comes up at 1 Gb/s.",
+            "Leave blank for normal copper runs: a link below 1 Gb/s is then only a WARN "
+            "(often a damaged pair).",
+            "Not used by Ping Test.",
+        ],
+    },
     "far_end": {
         "what": "Where to plug the test switch cable in to reach this run "
                 "(unused runs only).",
@@ -200,9 +225,10 @@ class ConnectionDialog(tk.Toplevel):
             ttk.Label(body, text=FIELD_LABELS[field] + ":").grid(
                 row=row, column=0, sticky="w", pady=3, padx=(0, 8))
             var = tk.StringVar(value=_display(entry.get(field)))
-            if field == "status":
-                var.set(var.get() or VALID_STATUSES[0])
-                widget = ttk.Combobox(body, textvariable=var, values=VALID_STATUSES,
+            if field in ("status", "media"):
+                choices = VALID_STATUSES if field == "status" else VALID_MEDIA
+                var.set(var.get().lower() or choices[0])
+                widget = ttk.Combobox(body, textvariable=var, values=choices,
                                       state="readonly", width=34)
                 widget.bind("<<ComboboxSelected>>", lambda _e: self._update_state())
             else:
@@ -316,6 +342,8 @@ class ConnectionDialog(tk.Toplevel):
             value = var.get().strip()
             if unused and field in ("ip", "device"):
                 value = ""
+            if field == "media" and value == VALID_MEDIA[0] and "media" not in self._original:
+                value = ""  # copper is the default; don't write it out
             if not value:
                 entry.pop(field, None)
             elif field == "panel_port" and value.isdigit():

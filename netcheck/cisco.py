@@ -176,7 +176,11 @@ _STATUS_WORDS = ("connected", "notconnect", "disabled", "err-disabled", "inactiv
 # A lookahead, so matches can overlap: a description such as "spare disabled
 # one" must not hide the real status that follows it.
 _STATUS_RE = re.compile(
-    r"(?=\s(" + "|".join(re.escape(w) for w in _STATUS_WORDS) + r")\s+(\S+)\s+(\S+)\s+(\S+))")
+    r"(?=\s(" + "|".join(re.escape(w) for w in _STATUS_WORDS)
+    + r")\s+(\S+)\s+(\S+)\s+(\S+)(?:[ \t]+(.*?))?[ \t]*$)")
+
+# Statuses meaning the port has no transceiver fitted.
+NO_TRANSCEIVER = ("sfpAbsent", "xcvrAbsent", "noXcvr")
 
 
 @dataclass
@@ -187,6 +191,7 @@ class InterfaceStatus:
     vlan: str
     duplex: str
     speed: str
+    media_type: str = ""  # the Type column, e.g. "SFP-10GBase-SR"
 
     @property
     def link_up(self) -> bool:
@@ -227,6 +232,7 @@ def parse_interfaces_status(text: str) -> dict[str, InterfaceStatus]:
             vlan=match.group(2),
             duplex=match.group(3),
             speed=match.group(4),
+            media_type=(match.group(5) or "").strip(),
         )
     return result
 
@@ -272,3 +278,116 @@ def parse_tdr(text: str) -> dict[str, CableTest]:
         if match and current is not None:
             current.pairs.append((match.group(1).upper(), match.group(2), match.group(3)))
     return results
+
+
+# --------------------------------------------------- transceiver light levels
+
+# Section keyword in 'show interfaces transceiver detail' -> reading name.
+_DOM_SECTIONS = (
+    ("Receive Power", "rx_power"),
+    ("Transmit Power", "tx_power"),
+    ("Temperature", "temperature"),
+    ("Voltage", "voltage"),
+    ("Current", "current"),
+)
+DOM_UNITS = {"rx_power": "dBm", "tx_power": "dBm", "temperature": "C", "voltage": "V",
+             "current": "mA"}
+DOM_LABELS = {"rx_power": "Rx power", "tx_power": "Tx power", "temperature": "Temperature",
+              "voltage": "Voltage", "current": "Laser current"}
+_NUMBER = r"(-?\d+(?:\.\d+)?|N/A|NA|-inf|-Inf)"
+_DOM_ROW = re.compile(
+    r"^(\S+)\s+" + _NUMBER + r"\s*(\+\+|--|\+|-)?\s+" + r"\s+".join([_NUMBER] * 4) + r"\s*$")
+
+
+@dataclass
+class DomReading:
+    value: Optional[float]          # None = not available / no light
+    high_alarm: Optional[float] = None
+    high_warn: Optional[float] = None
+    low_warn: Optional[float] = None
+    low_alarm: Optional[float] = None
+
+    def level(self) -> str:
+        """'ok', 'warn' or 'alarm' against the module's own thresholds."""
+        v = self.value
+        if v is None:
+            return "alarm"
+        if (self.low_alarm is not None and v <= self.low_alarm) or \
+                (self.high_alarm is not None and v >= self.high_alarm):
+            return "alarm"
+        if (self.low_warn is not None and v < self.low_warn) or \
+                (self.high_warn is not None and v > self.high_warn):
+            return "warn"
+        return "ok"
+
+
+def _num(text: str) -> Optional[float]:
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    return None if value != value else value  # NaN
+
+
+def parse_transceiver_detail(text: str) -> dict[str, dict[str, DomReading]]:
+    """Parse 'show interfaces transceiver detail' into {interface: {reading: DomReading}}.
+
+    A receive power of -40 dBm or less (how many modules report "no light") is
+    returned as None.
+    """
+    result: dict[str, dict[str, DomReading]] = {}
+    section: Optional[str] = None
+    header: list[str] = []
+    for line in text.splitlines():
+        if not line.strip():
+            header = []
+            continue
+        if line.lstrip().startswith(("Port", "-----")) or not normalize_interface(line.split()[0]):
+            header.append(line)
+            joined = " ".join(header)
+            for keyword, name in _DOM_SECTIONS:
+                if keyword in joined:
+                    section = name
+                    break
+            continue
+        match = _DOM_ROW.match(line.strip())
+        if not match or section is None:
+            continue
+        port = normalize_interface(match.group(1))
+        if port is None:
+            continue
+        value = _num(match.group(2))
+        if section in ("rx_power", "tx_power") and value is not None and value <= -40:
+            value = None  # modules report "no light" as -40 dBm or -inf
+        result.setdefault(port, {})[section] = DomReading(
+            value=value,
+            high_alarm=_num(match.group(4)), high_warn=_num(match.group(5)),
+            low_warn=_num(match.group(6)), low_alarm=_num(match.group(7)))
+    return result
+
+
+# ------------------------------------------------------------- error counters
+
+ERROR_COUNTERS = ("Align-Err", "FCS-Err", "Rcv-Err", "UnderSize", "Runts", "Giants",
+                  "Symbol-Err")
+
+
+def parse_counters_errors(text: str) -> dict[str, int]:
+    """Total receive-side errors per interface from 'show interfaces counters errors'."""
+    totals: dict[str, int] = {}
+    columns: list[str] = []
+    for line in text.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        if parts[0] == "Port":
+            columns = parts[1:]
+            continue
+        port = normalize_interface(parts[0])
+        if port is None or not columns:
+            continue
+        for name, value in zip(columns, parts[1:]):
+            if name in ERROR_COUNTERS and value.isdigit():
+                totals[port] = totals.get(port, 0) + int(value)
+        totals.setdefault(port, 0)
+    return totals

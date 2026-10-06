@@ -33,6 +33,8 @@ class PortCheck:
     seen_port: str = ""
     protocol: str = ""
     cable_test: str = ""
+    optics: str = ""   # fiber: transceiver light levels
+    errors: str = ""   # fiber: receive errors seen while the link was watched
 
 
 @dataclass

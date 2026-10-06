@@ -54,7 +54,7 @@ class GuiTests(unittest.TestCase):
         self.root.update()
 
     def test_run_accept_and_save(self):
-        self.assertEqual(len(self.app.tree.get_children()), 8)
+        self.assertEqual(len(self.app.tree.get_children()), 10)
         self.app.run_test()
         self.wait_for_run()
         self.assertEqual(self.app.tree.set("1", "result"), "PASS")
@@ -85,7 +85,7 @@ class GuiTests(unittest.TestCase):
     def test_invalid_entry_blocks_run(self):
         self.app.entries.append({"ip": "not-an-ip"})
         self.app.refresh()
-        self.assertEqual(self.app.tree.set("9", "result"), gui.INVALID)
+        self.assertEqual(self.app.tree.set("11", "result"), gui.INVALID)
         self.app.run_test()
         self.assertFalse(self.app.running())
         gui.messagebox.showerror.assert_called_once()
@@ -130,12 +130,18 @@ class FakeTestSwitch:
         return ""
 
     def send(self, command):
+        from tests.test_fiber import dom_output, te_status
         from tests.test_portverify import STATUS_HEADER, cdp_entry, status_line
         if command == "show interfaces status":
-            return STATUS_HEADER + status_line("Gi1/0/1") + status_line("Gi1/0/2")
+            # Fiber channel 1 is good; channel 2 has its strands reversed (no light, no link).
+            return (STATUS_HEADER + status_line("Gi1/0/1") + status_line("Gi1/0/2")
+                    + te_status("Te1/1/1") + te_status("Te1/1/2", "notconnect"))
         if command == "show cdp neighbors detail":
             return (cdp_entry("SW-CORE-01", "Gi1/0/1", "Gi1/0/5")
-                    + cdp_entry("SW-CORE-01", "Gi1/0/2", "Gi1/0/16"))
+                    + cdp_entry("SW-CORE-01", "Gi1/0/2", "Gi1/0/16")
+                    + cdp_entry("SW-CORE-01", "Te1/1/1", "TenGigabitEthernet1/1"))
+        if command == "show interfaces transceiver detail":
+            return dom_output({"Te1/1/1": (-2.8, -2.3), "Te1/1/2": (-40.0, -2.4)})
         return ""
 
     def close(self):
@@ -154,26 +160,41 @@ class PortVerifyGuiTests(GuiTests):
     def test_verify_unused_ports(self):
         from netcheck import gui_portverify
         with mock.patch.object(gui_portverify, "connect", return_value=FakeTestSwitch()), \
-                mock.patch.object(gui_portverify.messagebox, "showerror") as error:
+                mock.patch.object(gui_portverify.messagebox, "showerror") as error, \
+                mock.patch("netcheck.portverify.POLL_INTERVAL_S", 0.05), \
+                mock.patch("netcheck.portverify.LINK_GRACE_S", 0.2):
             self.app.open_port_verify()
             window = self.app.port_window
             window.host_var.set("10.0.0.2")
             window.user_var.set("admin")
             window.ports_var.set("Gi1/0/1-2")
+            self.assertEqual(window.fiber_var.get(), "Te1/1/1, Te1/1/2")  # from the inventory
+            window.soak_var.set(0)
             window.replan()
-            self.assertEqual([[a.connection.panel_port for a in b] for b in window.batches],
-                             [["5", "6"]])
+            # Copper PP-A:5/6 and fiber channels 1/2 are verified in the same batch.
+            self.assertEqual([[(a.connection.patch_panel, a.connection.panel_port) for a in b]
+                              for b in window.batches],
+                             [[("PP-A", "5"), ("PP-A", "6"), ("FIBER", "1"), ("FIBER", "2")]])
             window.connect()
             self.wait(window)
             error.assert_not_called()
             self.assertIn("Connected to NETTEST", window.conn_status.cget("text"))
             self.assertEqual(self.app.data["test_switch"]["ports"], ["Gi1/0/1", "Gi1/0/2"])
+            self.assertEqual(self.app.data["test_switch"]["fiber_soak"], 0)
             self.assertNotIn("password", json.dumps(self.app.data["test_switch"]))
 
             window.verify()
             self.wait(window)
             self.assertEqual(window.tree.set("GigabitEthernet1/0/1", "status"), "PASS")
             self.assertEqual(window.tree.set("GigabitEthernet1/0/2", "status"), "FAIL")
+            fiber1 = "TenGigabitEthernet1/1/1"
+            self.assertEqual(window.tree.set(fiber1, "status"), "PASS")
+            self.assertEqual(window.tree.set(fiber1, "link"), "up 10 Gb/s")
+            self.assertEqual(window.tree.set(fiber1, "cable"),
+                             "Rx -2.8 dBm, 7.1 dB margin; Tx -2.3 dBm")
+            self.assertEqual(window.tree.set("TenGigabitEthernet1/1/2", "status"), "FAIL")
+            self.assertIn("swap the P and S strands",
+                          window.tree.set("TenGigabitEthernet1/1/2", "detail"))
             # Results show in the main table too.
             self.assertEqual(self.app.tree.set("5", "result"), "PASS")
             self.assertEqual(self.app.tree.set("6", "result"), "FAIL")
@@ -184,7 +205,7 @@ class PortVerifyGuiTests(GuiTests):
         self.wait_for_run()
         self.assertEqual(self.app.tree.set("6", "result"), "FAIL")
         self.assertIn("Gi1/0/16", self.app.tree.set("6", "message"))
-        self.assertEqual({r.connection.index for r in self.app.last_run}, set(range(1, 9)))
+        self.assertEqual({r.connection.index for r in self.app.last_run}, set(range(1, 11)))
 
     # Don't re-run the inherited ping tests in this class.
     test_run_accept_and_save = test_filter_by_switch = None

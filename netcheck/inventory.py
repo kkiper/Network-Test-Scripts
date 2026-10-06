@@ -5,10 +5,15 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from .mac import normalize_mac
+
+MEDIA_COPPER = "copper"
+MEDIA_FIBER = "fiber"
+VALID_MEDIA = (MEDIA_COPPER, MEDIA_FIBER)
 
 STATUS_CONNECTED = "connected"
 STATUS_UNUSED = "unused"
@@ -23,6 +28,8 @@ KNOWN_FIELDS = (
     "ip",
     "expected_mac",
     "status",
+    "media",
+    "expected_speed",
     "far_end",
     "notes",
 )
@@ -45,6 +52,8 @@ class Connection:
     ip: str = ""
     expected_mac: Optional[str] = None
     status: str = STATUS_CONNECTED
+    media: str = MEDIA_COPPER
+    expected_speed: Optional[int] = None  # Mb/s the link must reach, if specified
     far_end: str = ""  # where the test switch plugs in to reach this run
     notes: str = ""
     extra: dict = field(default_factory=dict)
@@ -63,6 +72,26 @@ class Connection:
         if self.far_end:
             return self.far_end
         return f"far end of {self.patch_panel or '?'} port {self.panel_port or '?'}"
+
+
+def parse_speed(value: Any) -> Optional[int]:
+    """Parse a link speed into Mb/s: '10G' -> 10000, '1G' -> 1000, '100M'/'100' -> 100."""
+    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*([GM]?)(?:b(?:ps|/s)?|bit/s)?\s*",
+                         str(value), re.IGNORECASE)
+    if not match:
+        return None
+    number = float(match.group(1))
+    mbps = number * 1000 if match.group(2).upper() == "G" else number
+    return int(mbps) if mbps >= 1 else None
+
+
+def format_speed(mbps: Optional[int]) -> str:
+    """10000 -> '10 Gb/s', 100 -> '100 Mb/s'."""
+    if not mbps:
+        return ""
+    if mbps >= 1000:
+        return f"{mbps / 1000:g} Gb/s"
+    return f"{mbps} Mb/s"
 
 
 def read_json(path: str) -> Any:
@@ -178,6 +207,15 @@ def _parse_entry(entry: Any, index: int) -> tuple[Optional[Connection], list[str
     if raw_mac and mac is None:
         errors.append(f"{where}: '{raw_mac}' is not a valid MAC address")
 
+    media = fields["media"].lower() or MEDIA_COPPER
+    if media not in VALID_MEDIA:
+        errors.append(f"{where}: media '{fields['media']}' must be one of {', '.join(VALID_MEDIA)}")
+
+    speed = parse_speed(fields["expected_speed"]) if fields["expected_speed"] else None
+    if fields["expected_speed"] and speed is None:
+        errors.append(f"{where}: expected_speed '{fields['expected_speed']}' isn't a speed "
+                      "(use e.g. 10G, 1G or 100M)")
+
     if status == STATUS_UNUSED and ip:
         errors.append(f"{where}: unused connection should not have an IP address")
 
@@ -194,6 +232,8 @@ def _parse_entry(entry: Any, index: int) -> tuple[Optional[Connection], list[str
         ip=ip,
         expected_mac=mac,
         status=status,
+        media=media,
+        expected_speed=speed,
         far_end=fields["far_end"],
         notes=fields["notes"],
         extra={k: v for k, v in entry.items() if k not in KNOWN_FIELDS},

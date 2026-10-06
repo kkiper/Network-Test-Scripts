@@ -44,7 +44,7 @@
   <rect x="240" y="130" width="200" height="66" rx="8" fill="#1f5fa8"/>
   <rect x="240" y="180" width="200" height="16" fill="#1f5fa8"/>
   <text x="340" y="154" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">TEST SWITCH</text>
-  <text x="340" y="174" text-anchor="middle" font-size="12" fill="#e6efff">Catalyst 9200 · NETTEST</text>
+  <text x="340" y="174" text-anchor="middle" font-size="12" fill="#e6efff">C9200L-24T-4X · NETTEST</text>
   <text x="340" y="190" text-anchor="middle" font-size="12" fill="#e6efff">mgmt 192.168.100.2 (VLAN 99)</text>
 
   <!-- Mgmt port -->

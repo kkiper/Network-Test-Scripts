@@ -23,7 +23,8 @@ COLUMNS = {
     "status": ("Result", 70, "center"),
     "link": ("Link", 110, "w"),
     "seen": ("Seen On", 150, "w"),
-    "cable": ("Cable Test", 110, "w"),
+    "cable": ("Cable Test / Optics", 245, "w"),
+    "errors": ("Errors", 70, "center"),
     "detail": ("Detail", 380, "w"),
 }
 ROW_STYLES = {
@@ -78,6 +79,8 @@ class PortVerifyWindow(tk.Toplevel):
         self.secret_var = tk.StringVar()
         self.ports_var = tk.StringVar(value=", ".join(short_interface(p) for p in s.ports)
                                       or "Gi1/0/1-23")
+        self.fiber_var = tk.StringVar(value=", ".join(short_interface(p) for p in s.fiber_ports))
+        self.soak_var = tk.IntVar(value=int(s.fiber_soak))
         self.timeout_var = tk.IntVar(value=int(s.cdp_timeout))
         self.tdr_var = tk.BooleanVar(value=s.cable_test)
         self.clear_var = tk.BooleanVar(value=s.clear_tables)
@@ -92,9 +95,16 @@ class PortVerifyWindow(tk.Toplevel):
         field(0, 2, "Username:", self.user_var, 14)
         field(0, 4, "Password:", self.password_var, 14, show="•")
         field(0, 6, "Enable secret:", self.secret_var, 14, show="•")
-        ports_entry = field(1, 0, "Test ports:", self.ports_var, 18)
-        ports_entry.bind("<FocusOut>", lambda _e: self.replan())
-        ports_entry.bind("<Return>", lambda _e: self.replan())
+        for row, label, var in ((1, "Copper test ports:", self.ports_var),
+                                (2, "Fiber (SFP+) ports:", self.fiber_var)):
+            entry = field(row, 0, label, var, 18)
+            entry.bind("<FocusOut>", lambda _e: self.replan())
+            entry.bind("<Return>", lambda _e: self.replan())
+        ttk.Label(frame, text="Fiber error check (s):").grid(row=2, column=2, sticky="w")
+        ttk.Spinbox(frame, from_=0, to=3600, increment=30, textvariable=self.soak_var,
+                    width=6).grid(row=2, column=3, sticky="w")
+        ttk.Label(frame, text="e.g. Te1/1/1-2 - leave blank if there are no fiber runs",
+                  foreground="#555555").grid(row=2, column=4, columnspan=4, sticky="w")
         ttk.Label(frame, text="CDP wait (s):").grid(row=1, column=2, sticky="w")
         ttk.Spinbox(frame, from_=20, to=600, increment=10, textvariable=self.timeout_var,
                     width=6).grid(row=1, column=3, sticky="w")
@@ -103,9 +113,9 @@ class PortVerifyWindow(tk.Toplevel):
         ttk.Checkbutton(frame, text="Clear CDP/LLDP tables per batch",
                         variable=self.clear_var).grid(row=1, column=6, columnspan=2, sticky="w")
         self.connect_button = ttk.Button(frame, text="Connect", command=self.connect)
-        self.connect_button.grid(row=0, column=8, rowspan=2, padx=(6, 0), sticky="ns")
+        self.connect_button.grid(row=0, column=8, rowspan=3, padx=(6, 0), sticky="ns")
         self.conn_status = ttk.Label(frame, text="Not connected", foreground="#555555")
-        self.conn_status.grid(row=2, column=0, columnspan=9, sticky="w", pady=(4, 0))
+        self.conn_status.grid(row=3, column=0, columnspan=9, sticky="w", pady=(4, 0))
 
     def _build_batch_bar(self) -> None:
         bar = ttk.Frame(self, padding=(8, 0))
@@ -157,19 +167,27 @@ class PortVerifyWindow(tk.Toplevel):
     def read_settings(self, quiet: bool = False) -> Optional[TestSwitchSettings]:
         try:
             ports = expand_port_range(self.ports_var.get())
+            fiber_ports = expand_port_range(self.fiber_var.get())
             timeout = int(self.timeout_var.get())
-            if not ports:
-                raise ValueError("enter the test switch ports to use, e.g. Gi1/0/1-23")
+            soak = int(self.soak_var.get())
+            if not ports and not fiber_ports:
+                raise ValueError("enter the test switch ports to use, e.g. Gi1/0/1-23 "
+                                 "(and Te1/1/1-2 for fiber runs)")
             if timeout < 10:
                 raise ValueError("CDP wait must be at least 10 seconds")
+            if soak < 0:
+                raise ValueError("the fiber error check can't be negative")
         except (ValueError, tk.TclError) as exc:
             if not quiet:
                 messagebox.showerror("Test ports", f"Invalid setting: {exc}", parent=self)
             return None
-        settings = TestSwitchSettings(**vars(self.settings))
+        settings = TestSwitchSettings(**{**vars(self.settings),
+                                         "ports": [], "fiber_ports": []})
         settings.host = self.host_var.get().strip()
         settings.username = self.user_var.get().strip()
         settings.ports = ports
+        settings.fiber_ports = fiber_ports
+        settings.fiber_soak = soak
         settings.cdp_timeout = timeout
         settings.cable_test = bool(self.tdr_var.get())
         settings.clear_tables = bool(self.clear_var.get())
@@ -190,7 +208,8 @@ class PortVerifyWindow(tk.Toplevel):
             self.batches, self.unverifiable = [], []
             self.instructions.configure(text="Enter valid test ports, e.g. Gi1/0/1-23.")
         else:
-            self.batches, self.unverifiable = plan_batches(connections, settings.ports)
+            self.batches, self.unverifiable = plan_batches(connections, settings.ports,
+                                                           settings.fiber_ports)
             self.app.add_results(self.unverifiable)
         self.batch_no = min(self.batch_no, max(len(self.batches) - 1, 0))
         self.show_batch()
@@ -235,7 +254,8 @@ class PortVerifyWindow(tk.Toplevel):
             res.result if res and pc else "",
             pc.link if pc else "",
             f"{pc.seen_switch} {pc.seen_port}".strip() if pc else "",
-            pc.cable_test if pc else "",
+            (pc.optics or pc.cable_test) if pc else "",
+            pc.errors if pc else "",
             interim or (res.message if res and pc else ""),
         ]
 
