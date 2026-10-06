@@ -15,7 +15,8 @@ except ImportError:  # Python built without Tk
 from netcheck import checker
 from netcheck.ping import PingResult
 
-EXAMPLE = os.path.join(os.path.dirname(__file__), "..", "examples", "expected_interconnect.json")
+# A frozen copy of the example inventory, so the shipped example can change freely.
+EXAMPLE = os.path.join(os.path.dirname(__file__), "fixtures", "sample_inventory.json")
 MACS = {"192.168.1.1": "00:1a:2b:3c:4d:01", "192.168.1.10": "00:1a:2b:3c:4d:99",
         "192.168.1.11": "00:1a:2b:3c:4d:11", "192.168.1.50": "00:1a:2b:3c:4d:50"}
 

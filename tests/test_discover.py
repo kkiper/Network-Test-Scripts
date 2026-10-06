@@ -19,7 +19,8 @@ from netcheck.inventory import load_inventory
 from netcheck.mac import is_locally_administered, parse_arp_table
 from netcheck.ping import PingResult
 
-EXAMPLE = os.path.join(os.path.dirname(__file__), "..", "examples", "expected_interconnect.json")
+# A frozen copy of the example inventory, so the shipped example can change freely.
+EXAMPLE = os.path.join(os.path.dirname(__file__), "fixtures", "sample_inventory.json")
 
 # Example inventory: 192.168.1.1 Firewall-01 (00:1a:2b:3c:4d:01), .10 Server-DB-01 (..:10),
 # .11 Server-APP-01 (no MAC), .50 Printer-2F (..:50), .101 Workstation-101 (..:65).

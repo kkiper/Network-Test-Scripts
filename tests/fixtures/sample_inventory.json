@@ -1,0 +1,114 @@
+{
+  "description": "Expected physical interconnect. One entry per patch panel port. status: 'connected' = a device should be patched here; 'unused' = port should be empty. expected_mac may be left out - run with --write-baseline to capture it. far_end (optional) says where to plug the test switch in to reach an unused run. Fiber runs: media 'fiber' and expected_speed '10G' are tested on the test switch's SFP+ ports.",
+  "test_switch": {
+    "host": "192.168.100.2",
+    "username": "admin",
+    "ports": "Gi1/0/1-23",
+    "fiber_ports": "Te1/1/1-2",
+    "cdp_timeout": 90,
+    "cable_test": false
+  },
+  "connections": [
+    {
+      "patch_panel": "PP-A",
+      "panel_port": 1,
+      "switch": "SW-CORE-01",
+      "switch_port": "Gi1/0/1",
+      "device": "Firewall-01",
+      "ip": "192.168.1.1",
+      "expected_mac": "00:1a:2b:3c:4d:01",
+      "status": "connected",
+      "notes": "Default gateway"
+    },
+    {
+      "patch_panel": "PP-A",
+      "panel_port": 2,
+      "switch": "SW-CORE-01",
+      "switch_port": "Gi1/0/2",
+      "device": "Server-DB-01",
+      "ip": "192.168.1.10",
+      "expected_mac": "00:1a:2b:3c:4d:10",
+      "status": "connected"
+    },
+    {
+      "patch_panel": "PP-A",
+      "panel_port": 3,
+      "switch": "SW-CORE-01",
+      "switch_port": "Gi1/0/3",
+      "device": "Server-APP-01",
+      "ip": "192.168.1.11",
+      "status": "connected",
+      "notes": "MAC not yet recorded"
+    },
+    {
+      "patch_panel": "PP-A",
+      "panel_port": 4,
+      "switch": "SW-CORE-01",
+      "switch_port": "Gi1/0/4",
+      "device": "Printer-2F",
+      "ip": "192.168.1.50",
+      "expected_mac": "001a.2b3c.4d50",
+      "status": "connected",
+      "notes": "Cisco-style MAC is fine"
+    },
+    {
+      "patch_panel": "PP-A",
+      "panel_port": 5,
+      "switch": "SW-CORE-01",
+      "switch_port": "Gi1/0/5",
+      "status": "unused",
+      "far_end": "PP-Z:5",
+      "notes": "Spare"
+    },
+    {
+      "patch_panel": "PP-A",
+      "panel_port": 6,
+      "switch": "SW-CORE-01",
+      "switch_port": "Gi1/0/6",
+      "status": "unused",
+      "far_end": "PP-Z:6",
+      "notes": "Spare"
+    },
+    {
+      "patch_panel": "PP-B",
+      "panel_port": 1,
+      "switch": "SW-ACCESS-01",
+      "switch_port": "Fa0/1",
+      "device": "Workstation-101",
+      "ip": "192.168.1.101",
+      "expected_mac": "00-1A-2B-3C-4D-65",
+      "status": "connected"
+    },
+    {
+      "patch_panel": "PP-B",
+      "panel_port": 2,
+      "switch": "SW-ACCESS-01",
+      "switch_port": "Fa0/2",
+      "device": "Unmanaged-Hub",
+      "status": "connected",
+      "notes": "No IP - cannot be pinged"
+    },
+    {
+      "patch_panel": "FIBER",
+      "panel_port": 1,
+      "switch": "SW-CORE-01",
+      "switch_port": "Te1/1",
+      "status": "unused",
+      "media": "fiber",
+      "expected_speed": "10G",
+      "far_end": "Fiber end P1/S1",
+      "notes": "4-fiber multimode cable, channel 1; SFP-10GSR-85-I at both ends"
+    },
+    {
+      "patch_panel": "FIBER",
+      "panel_port": 2,
+      "switch": "SW-CORE-01",
+      "switch_port": "Te1/2",
+      "status": "unused",
+      "media": "fiber",
+      "expected_speed": "10G",
+      "far_end": "Fiber end P2/S2",
+      "notes": "4-fiber multimode cable, channel 2; SFP-10GSR-85-I at both ends"
+    }
+  ]
+}

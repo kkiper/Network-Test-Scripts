@@ -15,7 +15,8 @@ from netcheck.cli import main
 from netcheck.inventory import Connection, InventoryError, load_inventory
 from netcheck.ping import PingResult, build_ping_command, parse_ping_output
 
-EXAMPLE = os.path.join(os.path.dirname(__file__), "..", "examples", "expected_interconnect.json")
+# A frozen copy of the example inventory, so the shipped example can change freely.
+EXAMPLE = os.path.join(os.path.dirname(__file__), "fixtures", "sample_inventory.json")
 
 
 def write_tmp(data):
@@ -158,6 +159,13 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(conn.panel_port, "7")
         self.assertEqual(conn.status, "connected")
         self.assertIsNone(conn.expected_mac)
+
+    def test_shipped_example_is_valid(self):
+        shipped = os.path.join(os.path.dirname(__file__), "..", "examples",
+                               "expected_interconnect.json")
+        conns = load_inventory(shipped)  # raises if the example stops validating
+        self.assertTrue(any(c.status == "unused" for c in conns))
+        self.assertTrue(any(c.status == "connected" and c.ip for c in conns))
 
     def test_missing_file_explains_what_to_do(self):
         with self.assertRaises(InventoryError) as ctx:

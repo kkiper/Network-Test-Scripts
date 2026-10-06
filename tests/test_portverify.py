@@ -17,7 +17,8 @@ from netcheck.portverify import (
     Assignment, TestSwitchSettings, plan_batches, preflight, verify_batch,
 )
 
-EXAMPLE = os.path.join(os.path.dirname(__file__), "..", "examples", "expected_interconnect.json")
+# A frozen copy of the example inventory, so the shipped example can change freely.
+EXAMPLE = os.path.join(os.path.dirname(__file__), "fixtures", "sample_inventory.json")
 
 STATUS_HEADER = (
     "Port         Name               Status       Vlan       Duplex  Speed Type\n")
