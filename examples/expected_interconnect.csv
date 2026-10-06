@@ -1,0 +1,12 @@
+# Expected physical interconnect. One row per patch panel port.
+# status: connected = a device should be patched here; unused = port should be empty.
+# expected_mac may be left blank - run with --write-baseline to capture it.
+patch_panel,panel_port,switch,switch_port,device,ip,expected_mac,status,notes
+PP-A,1,SW-CORE-01,Gi1/0/1,Firewall-01,192.168.1.1,00:1a:2b:3c:4d:01,connected,Default gateway
+PP-A,2,SW-CORE-01,Gi1/0/2,Server-DB-01,192.168.1.10,00:1a:2b:3c:4d:10,connected,
+PP-A,3,SW-CORE-01,Gi1/0/3,Server-APP-01,192.168.1.11,,connected,MAC not yet recorded
+PP-A,4,SW-CORE-01,Gi1/0/4,Printer-2F,192.168.1.50,001a.2b3c.4d50,connected,Cisco-style MAC is fine
+PP-A,5,SW-CORE-01,Gi1/0/5,,,,unused,Spare
+PP-A,6,SW-CORE-01,Gi1/0/6,,,,unused,Spare
+PP-B,1,SW-ACCESS-01,Fa0/1,Workstation-101,192.168.1.101,00-1A-2B-3C-4D-65,connected,
+PP-B,2,SW-ACCESS-01,Fa0/2,Unmanaged-Hub,,,connected,No IP - cannot be pinged
