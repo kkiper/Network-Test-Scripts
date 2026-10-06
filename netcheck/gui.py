@@ -71,6 +71,105 @@ FIELD_LABELS = {
     "notes": "Notes",
 }
 
+# Help shown in the Add/Edit Connection dialog: what the field is, an example,
+# and how the tests use it.
+FIELD_HELP = {
+    "patch_panel": {
+        "what": "The name of the patch panel this port is on, as labelled in the rack.",
+        "example": "PP-A",
+        "tips": [
+            "Each row describes one patch-panel port, so Patch panel + Panel port must "
+            "be unique: the same port can't appear twice.",
+            "Used by the Patch panel filter to test one panel at a time.",
+        ],
+    },
+    "panel_port": {
+        "what": "The port number (or label) on that patch panel.",
+        "example": "5    or    A05",
+        "tips": [
+            "Whole numbers are saved as numbers, so they sort naturally (2 before 10).",
+            "Together with Patch panel, this identifies the row in results and reports.",
+        ],
+    },
+    "switch": {
+        "what": "The production switch this patch-panel port is patched to.",
+        "example": "SW-CORE-01",
+        "tips": [
+            "Use the switch's real hostname (as shown in its prompt). Verify Unused Ports "
+            "compares it with the name the switch announces over CDP/LLDP.",
+            "Upper/lower case and any domain name are ignored, so SW-CORE-01 matches "
+            "sw-core-01.plant.local.",
+            "Used by the Switch filter to test one switch at a time.",
+        ],
+    },
+    "switch_port": {
+        "what": "The port on that switch the patch-panel port is patched to.",
+        "example": "Gi1/0/5    or    GigabitEthernet1/0/5",
+        "tips": [
+            "Short and long interface names are both accepted and treated as the same port.",
+            "Required for unused runs: it is what Verify Unused Ports checks the run "
+            "really lands on.",
+            "Switch + Switch port must be unique.",
+        ],
+    },
+    "device": {
+        "what": "The name of the device that should be connected at the far end of this run.",
+        "example": "Server-DB-01",
+        "tips": [
+            "Shown in results so you can recognise the row; it isn't checked on the network.",
+            "Only for 'connected' rows (disabled when Status is 'unused').",
+        ],
+    },
+    "ip": {
+        "what": "The device's IP address (IPv4 or IPv6).",
+        "example": "192.168.1.10",
+        "tips": [
+            "Ping Test pings this address, then reads the device's MAC from this "
+            "computer's ARP table.",
+            "Run the test from a computer on the same subnet/VLAN as the device, or the "
+            "MAC can't be seen (the result is a WARN).",
+            "Leave blank if the device has no IP; the row is then skipped.",
+            "Must be unique, and isn't allowed on 'unused' rows.",
+        ],
+    },
+    "expected_mac": {
+        "what": "The MAC address the device at this port should have.",
+        "example": "00:1a:2b:3c:4d:5e   00-1A-2B-3C-4D-5E   001a.2b3c.4d5e",
+        "tips": [
+            "Any common format is accepted, in upper or lower case.",
+            "If a different MAC answers on the IP, the row FAILS (wrong device or an "
+            "IP conflict).",
+            "Don't know it yet? Leave it blank, run Ping Test, then use "
+            "Accept Discovered MACs to fill it in.",
+            "Must be unique.",
+        ],
+    },
+    "status": {
+        "what": "Whether something should be connected to this patch-panel port.",
+        "example": "connected    or    unused",
+        "tips": [
+            "connected: a device is patched here. Ping Test pings it and checks its MAC.",
+            "unused: nothing is connected at the far end yet. Verify Unused Ports checks "
+            "the run lands on the expected switch port using the test switch.",
+        ],
+    },
+    "far_end": {
+        "what": "Where to plug the test switch cable in to reach this run "
+                "(unused runs only).",
+        "example": "PP-Z:5    or    Room 101 outlet 3",
+        "tips": [
+            "Shown in Verify Unused Ports and in the exported cabling plan, so the "
+            "technician knows exactly where each test cable goes.",
+            "If left blank, the plan says 'far end of <panel> port <port>'.",
+        ],
+    },
+    "notes": {
+        "what": "Free text for your own reference.",
+        "example": "Spare for the new line controller",
+        "tips": ["Saved in the file and shown in the details pane; not used by the tests."],
+    },
+}
+
 
 def _display(value) -> str:
     return "" if value is None else str(value)
@@ -93,6 +192,7 @@ class ConnectionDialog(tk.Toplevel):
         self._original = entry
         self._validate = validate
         self._vars: dict[str, tk.StringVar] = {}
+        self._widgets: dict[str, tk.Widget] = {}
 
         body = ttk.Frame(self, padding=12)
         body.grid(sticky="nsew")
@@ -108,22 +208,42 @@ class ConnectionDialog(tk.Toplevel):
             else:
                 widget = ttk.Entry(body, textvariable=var, width=37)
             widget.grid(row=row, column=1, sticky="we", pady=3)
+            widget.bind("<FocusIn>", lambda _e, f=field: self._focus_help(f))
+            ttk.Button(body, text="?", width=2, takefocus=False,
+                       command=lambda f=field: self.show_help(f)).grid(
+                row=row, column=2, padx=(4, 0), pady=3)
             self._vars[field] = var
+            self._widgets[field] = widget
             if row == 0:
                 widget.focus_set()
 
-        hint = ("MAC may be in any format (aa:bb:cc:dd:ee:ff, AA-BB-..., aabb.ccdd.eeff).\n"
-                "Leave IP/MAC blank if unknown. Unused ports have no device or IP.\n"
-                "Test point: where the test switch plugs in to reach this run (e.g. PP-Z:5).")
-        ttk.Label(body, text=hint, foreground="#555555").grid(
-            row=len(KNOWN_FIELDS), column=0, columnspan=2, sticky="w", pady=(8, 0))
-        self._error = ttk.Label(body, text="", foreground="#b00020", wraplength=380)
-        self._error.grid(row=len(KNOWN_FIELDS) + 1, column=0, columnspan=2, sticky="w")
+        ttk.Label(body, text="Every field is optional. Press Help, or ? next to a field, "
+                             "for details.", foreground="#555555").grid(
+            row=len(KNOWN_FIELDS), column=0, columnspan=3, sticky="w", pady=(8, 0))
+        self._error = ttk.Label(body, text="", foreground="#b00020", wraplength=400)
+        self._error.grid(row=len(KNOWN_FIELDS) + 1, column=0, columnspan=3, sticky="w")
 
         buttons = ttk.Frame(body)
-        buttons.grid(row=len(KNOWN_FIELDS) + 2, column=0, columnspan=2, sticky="e", pady=(10, 0))
-        ttk.Button(buttons, text="OK", command=self._ok, default="active").pack(side="left", padx=4)
-        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="left")
+        buttons.grid(row=len(KNOWN_FIELDS) + 2, column=0, columnspan=3, sticky="we", pady=(10, 0))
+        self._help_button = ttk.Button(buttons, text="Help \u25b8", command=self.toggle_help)
+        self._help_button.pack(side="left")
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(buttons, text="OK", command=self._ok, default="active").pack(
+            side="right", padx=4)
+
+        # Help panel (hidden until Help or a ? button is pressed).
+        self._help_field = KNOWN_FIELDS[0]
+        self._help_panel = ttk.LabelFrame(self, text="Help", padding=8)
+        self._help_text = tk.Text(self._help_panel, width=46, height=18, wrap="word",
+                                  relief="flat", font="TkDefaultFont", cursor="arrow",
+                                  background=self.cget("background"))
+        self._help_text.pack(fill="both", expand=True)
+        self._help_text.tag_configure("title", font=("TkDefaultFont", 11, "bold"))
+        self._help_text.tag_configure("heading", font=("TkDefaultFont", 9, "bold"),
+                                      foreground="#555555", spacing1=8)
+        self._help_text.tag_configure("example", font="TkFixedFont", foreground="#1f4e8c")
+        self._help_text.tag_configure("tip", lmargin1=4, lmargin2=16)
+        self._help_text.configure(state="disabled")
         self.bind("<Return>", lambda _e: self._ok())
         self.bind("<Escape>", lambda _e: self.destroy())
 
@@ -136,6 +256,52 @@ class ConnectionDialog(tk.Toplevel):
         y = parent.winfo_rooty() + (parent.winfo_height() - self.winfo_height()) // 3
         self.geometry(f"+{max(x, 0)}+{max(y, 0)}")
         self.grab_set()
+
+    # ------------------------------------------------------------------ help
+
+    @property
+    def help_visible(self) -> bool:
+        return bool(self._help_panel.winfo_ismapped() or self._help_panel.grid_info())
+
+    def toggle_help(self) -> None:
+        if self.help_visible:
+            self._help_panel.grid_remove()
+            self._help_button.configure(text="Help \u25b8")
+        else:
+            self.show_help(self._help_field)
+
+    def show_help(self, field: str) -> None:
+        """Open the help panel on ``field``."""
+        if not self.help_visible:
+            self._help_panel.grid(row=0, column=1, sticky="nsew", padx=(0, 12), pady=12)
+            self._help_button.configure(text="Help \u25c2")
+        self._render_help(field)
+
+    def _focus_help(self, field: str) -> None:
+        # While the panel is open, it follows the field being edited.
+        self._help_field = field
+        if self.help_visible:
+            self._render_help(field)
+
+    def _render_help(self, field: str) -> None:
+        self._help_field = field
+        info = FIELD_HELP[field]
+        text = self._help_text
+        text.configure(state="normal")
+        text.delete("1.0", "end")
+        text.insert("end", FIELD_LABELS[field] + "\n", "title")
+        text.insert("end", info["what"] + "\n")
+        text.insert("end", "Example\n", "heading")
+        # Alternatives are separated by wide gaps (optionally "or"): one per line.
+        for example in re.split(r"\s{3,}(?:or\s{3,})?", info["example"]):
+            text.insert("end", example + "\n", "example")
+        text.insert("end", "Good to know\n", "heading")
+        for tip in info["tips"]:
+            text.insert("end", "\u2022 " + tip + "\n", "tip")
+        text.configure(state="disabled")
+
+    def help_text(self) -> str:
+        return self._help_text.get("1.0", "end").strip()
 
     def _update_state(self) -> None:
         unused = self._vars["status"].get() == STATUS_UNUSED

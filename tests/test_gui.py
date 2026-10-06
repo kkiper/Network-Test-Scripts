@@ -96,6 +96,30 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(self.app._dialog_problems(2, self.app.entries[1]), [])
 
 
+    def test_connection_dialog_help(self):
+        dialog = gui.ConnectionDialog(self.root, "Add connection", {"status": "connected"},
+                                      lambda entry: [])
+        self.addCleanup(dialog.destroy)
+        self.assertEqual(set(gui.FIELD_HELP), set(gui.KNOWN_FIELDS))
+        self.assertFalse(dialog.help_visible)
+
+        dialog.toggle_help()
+        self.assertTrue(dialog.help_visible)
+        self.assertTrue(dialog.help_text().startswith("Patch panel"))
+
+        # The open panel follows the field being edited.
+        dialog._focus_help("expected_mac")
+        lines = dialog.help_text().splitlines()
+        self.assertEqual(lines[0], "Expected MAC")
+        self.assertIn("001a.2b3c.4d5e", lines)  # each example on its own line
+
+        dialog.toggle_help()
+        self.assertFalse(dialog.help_visible)
+        dialog.show_help("far_end")  # the ? button next to a field
+        self.assertTrue(dialog.help_visible)
+        self.assertTrue(dialog.help_text().startswith("Test point"))
+
+
 class FakeTestSwitch:
     """Test switch where test port 1 lands correctly and port 2 on the wrong port."""
 

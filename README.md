@@ -53,7 +53,9 @@ On Windows you can double-click **`interconnect_gui.pyw`** to start it without a
 
 1. **Open** an expected interconnect file, or build one from scratch with **Add Connection**
    (one row per patch-panel port; the new row is pre-filled with the selected row's
-   panel and switch). Double-click a row to **Edit** it. Mistakes such as invalid IPs or
+   panel and switch). Double-click a row to **Edit** it. In the connection form, press
+   **Help** (or **?** next to a field) for what each field means, an example, and how the
+   tests use it. Mistakes such as invalid IPs or
    MACs and duplicate IPs, MACs or ports are caught as you enter them, and any invalid
    rows in an opened file are highlighted.
 2. Pick the ping settings and optionally a single **Switch** or **Patch panel**, then press
