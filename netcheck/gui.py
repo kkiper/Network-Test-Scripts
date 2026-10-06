@@ -13,7 +13,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
-from . import __version__
+from . import __version__, netif
 from .checker import FAIL, PASS, SKIP, WARN, CheckResult, check_all
 from .inventory import (
     KNOWN_FIELDS, STATUS_UNUSED, VALID_MEDIA, VALID_STATUSES, InventoryError, parse_inventory,
@@ -388,6 +388,7 @@ class InterconnectApp:
 
         self._build_menu()
         self._build_toolbar()
+        self._build_interface_bar()
         self._build_options()
         self._build_table()
         self._build_details()
@@ -451,6 +452,69 @@ class InterconnectApp:
             side="right")
         ttk.Button(bar, text="Discover Devices...", command=self.open_discover).pack(
             side="right", padx=4)
+
+    def _build_interface_bar(self) -> None:
+        """Which wired Ethernet interface every test uses (Wi-Fi is never used)."""
+        bar = ttk.Frame(self.root, padding=(8, 6, 8, 0))
+        bar.pack(fill="x")
+        ttk.Label(bar, text="Wired interface:").pack(side="left")
+        self.iface_var = tk.StringVar()
+        self.iface_combo = ttk.Combobox(bar, textvariable=self.iface_var, state="readonly",
+                                        width=60)
+        self.iface_combo.pack(side="left", padx=(4, 6))
+        self.iface_combo.bind("<<ComboboxSelected>>", lambda _e: self._show_iface_status())
+        ttk.Button(bar, text="Refresh", command=self.refresh_interfaces).pack(side="left")
+        self.iface_status = ttk.Label(bar, text="")
+        self.iface_status.pack(side="left", padx=10)
+        self.interfaces: dict[str, netif.Interface] = {}
+        self.refresh_interfaces()
+
+    def refresh_interfaces(self) -> None:
+        """Re-detect the connected wired interfaces (e.g. after plugging in a cable)."""
+        try:
+            found = netif.wired_candidates()
+        except Exception:  # detection must never stop the app from opening
+            found = []
+        current = self.iface_var.get()
+        self.interfaces = {iface.label: iface for iface in found}
+        self.iface_combo.configure(values=list(self.interfaces))
+        if current in self.interfaces:
+            self.iface_var.set(current)
+        elif len(found) == 1:
+            self.iface_var.set(found[0].label)
+        else:
+            self.iface_var.set("")
+        self._show_iface_status()
+
+    def _show_iface_status(self) -> None:
+        if self.iface is not None:
+            text, colour = "Tests use only this interface (Wi-Fi is ignored).", "#1e7b1e"
+        elif self.interfaces:
+            text, colour = "Several wired interfaces are connected - choose one.", "#a06800"
+        else:
+            text, colour = ("No wired Ethernet connection with an IPv4 address - plug in the "
+                            "cable, set the address, then press Refresh."), "#b00020"
+        self.iface_status.configure(text=text, foreground=colour)
+
+    @property
+    def iface(self) -> Optional["netif.Interface"]:
+        return self.interfaces.get(self.iface_var.get())
+
+    def require_iface(self, parent=None) -> Optional["netif.Interface"]:
+        """The chosen wired interface, or None after telling the user what to do."""
+        if self.iface is None:
+            self.refresh_interfaces()
+        if self.iface is not None:
+            return self.iface
+        if self.interfaces:
+            message = ("More than one wired Ethernet interface is connected. Choose the one to "
+                       "use in 'Wired interface' at the top of the main window.")
+        else:
+            message = ("No wired Ethernet connection with an IPv4 address was found.\n\nPlug "
+                       "the laptop's Ethernet port into the network, give it an address (e.g. "
+                       "192.168.1.240/24), then press Refresh. Wi-Fi is never used.")
+        messagebox.showerror("Wired interface", message, parent=parent or self.root)
+        return None
 
     def _build_options(self) -> None:
         frame = ttk.LabelFrame(self.root, text="Test", padding=8)
@@ -960,6 +1024,9 @@ class InterconnectApp:
                                  "The 'ping' command was not found on this computer.",
                                  parent=self.root)
             return
+        iface = self.require_iface()
+        if iface is None:
+            return
 
         self.clear_results()
         self.results = dict(verified)
@@ -976,7 +1043,7 @@ class InterconnectApp:
             try:
                 results = check_all(connections, count=count, timeout_s=timeout,
                                     workers=workers, progress=self.events.put,
-                                    stop_event=self.stop_event)
+                                    stop_event=self.stop_event, iface=iface)
                 self.events.put(("done", results))
             except Exception as exc:  # report anything unexpected in the GUI
                 self.events.put(("error", exc))

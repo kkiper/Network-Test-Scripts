@@ -7,7 +7,7 @@ import shutil
 import sys
 from typing import Optional
 
-from . import __version__
+from . import __version__, netif
 from .discover import (
     DEFAULT_MAX_HOSTS, DEFAULT_OUI_PATH, EXPECTED, UNEXPECTED, UNKNOWN, discover, found_row,
     load_oui, local_addresses, new_entry, off_subnet_warning, parse_subnets, primary_address,
@@ -57,6 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="write a copy of the inventory with the unknown devices added")
     parser.add_argument("--no-colour", "--no-color", action="store_true",
                         help="disable coloured output")
+    netif.add_cli_arguments(parser)
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser
 
@@ -81,6 +82,9 @@ def print_found(found, out, colour: bool) -> None:
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+    iface, code = netif.resolve_cli_interface(args)
+    if code is not None:
+        return code
     data, connections = None, []
     if args.inventory:
         try:
@@ -94,7 +98,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         return EXIT_BAD_INPUT
 
     subnet_text = " ".join(args.subnet or suggest_subnets(connections,
-                                                          fallback=primary_address()))
+                                                          fallback=primary_address(iface)))
     if not subnet_text:
         print("error: give the subnet(s) to sweep with --subnet, e.g. 192.168.1.0/24",
               file=sys.stderr)
@@ -111,7 +115,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("error: the 'ping' command was not found on this system", file=sys.stderr)
         return EXIT_BAD_INPUT
 
-    warning = off_subnet_warning(networks, local_addresses(networks))
+    warning = off_subnet_warning(networks, local_addresses(networks, iface), iface)
     if warning:
         print(f"warning: {warning}", file=sys.stderr)
     subnets = [str(n) for n in networks]
@@ -124,7 +128,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"\r  {done}/{count} addresses pinged", end="", file=sys.stderr, flush=True)
 
     found = discover(connections, networks, timeout_s=args.timeout, workers=args.workers,
-                     vendors=load_oui(args.oui), progress=progress)
+                     vendors=load_oui(args.oui), progress=progress, iface=iface)
     print("\n", file=sys.stderr)
 
     shown = found if args.all else [f for f in found if f.category != EXPECTED]

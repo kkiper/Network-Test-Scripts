@@ -18,6 +18,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import partial
 from typing import Callable, Iterable, Optional
 
 from .inventory import STATUS_UNUSED, Connection
@@ -126,8 +127,10 @@ def hosts(networks: Iterable[ipaddress.IPv4Network]) -> list[str]:
     return list(seen)
 
 
-def primary_address() -> Optional[str]:
-    """This computer's main IPv4 address (the one its default route uses), if any."""
+def primary_address(iface=None) -> Optional[str]:
+    """This computer's address: the wired interface's if given, else the default route's."""
+    if iface is not None:
+        return str(iface.ipv4[0]) if iface.ipv4 else None
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.connect(("192.0.2.1", 9))  # documentation address; nothing is sent
@@ -141,8 +144,9 @@ def suggest_subnets(connections: Iterable[Connection],
                     fallback: Optional[str] = None) -> list[str]:
     """The /24 subnets containing the inventory's IPv4 addresses.
 
-    If the inventory has none, the /24 around ``fallback`` (normally this
-    computer's own address) is suggested instead.
+    If the inventory has none, the subnet of ``fallback`` (normally this
+    computer's own address, e.g. '192.168.1.240/23') is suggested instead; a
+    bare address is taken as a /24.
     """
     subnets: dict[str, None] = {}
     for conn in connections:
@@ -153,25 +157,35 @@ def suggest_subnets(connections: Iterable[Connection],
         if address.version == 4:
             subnets[str(ipaddress.ip_network(f"{address}/24", strict=False))] = None
     if not subnets and fallback:
-        subnets[str(ipaddress.ip_network(f"{fallback}/24", strict=False))] = None
+        text = fallback if "/" in fallback else f"{fallback}/24"
+        subnets[str(ipaddress.ip_network(text, strict=False))] = None
     return list(subnets)
 
 
 def off_subnet_warning(networks: list[ipaddress.IPv4Network],
-                       local_ips: Iterable[str]) -> Optional[str]:
+                       local_ips: Iterable[str], iface=None) -> Optional[str]:
     """Warn when this computer has no address in any of the swept subnets."""
     if set(local_ips):
         return None
-    mine = primary_address()
-    hint = (f" This computer is {mine}, so you may want "
-            f"{ipaddress.ip_network(f'{mine}/24', strict=False)}." if mine else "")
+    mine = primary_address(iface)
+    if mine:
+        own = ipaddress.ip_interface(mine if "/" in mine else f"{mine}/24")
+        where = f"Its wired interface ({iface.name}) is" if iface is not None else "This computer is"
+        hint = f" {where} {own.ip}, so you may want {own.network}."
+    else:
+        hint = ""
     return ("This computer doesn't have an address in "
             f"{', '.join(map(str, networks))}. Devices there may answer ping, but their MAC "
             "addresses can't be read, and devices that block ping won't be found." + hint)
 
 
-def local_addresses(networks: Iterable[ipaddress.IPv4Network]) -> set[str]:
-    """This computer's own address on each network (if it has one there)."""
+def local_addresses(networks: Iterable[ipaddress.IPv4Network], iface=None) -> set[str]:
+    """This computer's own address on each network (if it has one there).
+
+    With ``iface`` only that interface's addresses count.
+    """
+    if iface is not None:
+        return {str(a.ip) for a in iface.ipv4 if any(a.ip in n for n in networks)}
     found = set()
     for network in networks:
         target = str(next(iter(network.hosts()), network.network_address))
@@ -320,10 +334,20 @@ def discover(
     progress: Optional[Callable[[int, int], None]] = None,
     stop_event: Optional[threading.Event] = None,
     local_ips: Optional[Iterable[str]] = None,
+    iface=None,
 ) -> list[Found]:
-    """Sweep ``networks``, read the ARP table and classify every device found."""
+    """Sweep ``networks``, read the ARP table and classify every device found.
+
+    With ``iface`` (a netif.Interface) the sweep and the ARP table only use
+    that interface.
+    """
+    if iface is not None:
+        if ping_fn is ping:
+            ping_fn = partial(ping, iface=iface)
+        if arp_fn is read_arp_table:
+            arp_fn = partial(read_arp_table, iface=iface)
     replies = sweep(networks, ping_fn, timeout_s, workers, progress, stop_event)
-    local = local_addresses(networks) if local_ips is None else local_ips
+    local = local_addresses(networks, iface) if local_ips is None else local_ips
     return classify(connections, networks, replies, arp_fn(), local, vendors)
 
 

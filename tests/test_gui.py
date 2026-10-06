@@ -14,6 +14,7 @@ except ImportError:  # Python built without Tk
 
 from netcheck import checker
 from netcheck.ping import PingResult
+from tests.test_netif import FAKE_IFACE, Interface, patch_wired
 
 # A frozen copy of the example inventory, so the shipped example can change freely.
 EXAMPLE = os.path.join(os.path.dirname(__file__), "fixtures", "sample_inventory.json")
@@ -47,6 +48,7 @@ class GuiTests(unittest.TestCase):
             mock.patch.object(gui.messagebox, "showwarning"),
             mock.patch.object(gui.messagebox, "showerror"),
             mock.patch.object(gui.messagebox, "showinfo"),
+            patch_wired(),
         ]
         for p in patches:
             p.start()
@@ -107,6 +109,47 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(problems, ["duplicate IP address '192.168.1.1' (also on connection #1)"])
         self.assertEqual(self.app._dialog_problems(2, self.app.entries[1]), [])
 
+
+    def test_wired_interface_bar(self):
+        import ipaddress
+        # One wired interface: chosen automatically and passed to the ping test.
+        self.assertIs(self.app.iface, FAKE_IFACE)
+        self.assertIn("Tests use only this interface", self.app.iface_status.cget("text"))
+        seen = {}
+
+        def capture(conns, **kw):
+            seen.update(kw)
+            return fake_check_all(conns, **kw)
+
+        with mock.patch.object(gui, "check_all", capture):
+            self.app.run_test()
+            self.wait_for_run()
+        self.assertIs(seen["iface"], FAKE_IFACE)
+
+        # Two wired interfaces: nothing chosen, and the test asks the user to pick.
+        second = Interface("Ethernet 2", wired=True, up=True,
+                           ipv4=[ipaddress.IPv4Interface("10.0.5.20/24")])
+        with patch_wired([FAKE_IFACE, second]):
+            self.app.refresh_interfaces()
+            self.assertIs(self.app.iface, FAKE_IFACE)  # an earlier choice is kept
+            self.app.iface_var.set("")
+            self.app.refresh_interfaces()
+            self.assertIsNone(self.app.iface)
+            self.assertIn("choose one", self.app.iface_status.cget("text"))
+            gui.messagebox.showerror.reset_mock()
+            self.app.run_test()
+        self.assertFalse(self.app.running())
+        self.assertIn("More than one wired Ethernet interface",
+                      gui.messagebox.showerror.call_args[0][1])
+        self.app.iface_var.set(second.label)
+        self.assertIs(self.app.iface, second)
+
+        # None: a clear message, no test.
+        with patch_wired([]):
+            self.app.refresh_interfaces()
+            gui.messagebox.showerror.reset_mock()
+            self.app.run_test()
+        self.assertIn("No wired Ethernet connection", gui.messagebox.showerror.call_args[0][1])
 
     def test_connection_dialog_help(self):
         dialog = gui.ConnectionDialog(self.root, "Add connection", {"status": "connected"},
@@ -224,6 +267,7 @@ class PortVerifyGuiTests(GuiTests):
     # Don't re-run the inherited ping tests in this class.
     test_run_accept_and_save = test_filter_by_switch = None
     test_invalid_entry_blocks_run = test_dialog_rejects_duplicates = None
+    test_wired_interface_bar = None
 
 
 
@@ -302,7 +346,7 @@ class DiscoverGuiTests(GuiTests):
     # Don't re-run the inherited ping tests in this class.
     test_run_accept_and_save = test_filter_by_switch = None
     test_invalid_entry_blocks_run = test_dialog_rejects_duplicates = None
-    test_connection_dialog_help = None
+    test_connection_dialog_help = test_wired_interface_bar = None
 
 
 if __name__ == "__main__":

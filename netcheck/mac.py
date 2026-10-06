@@ -62,8 +62,20 @@ def _mac_from_lines(text: str, ip: str) -> Optional[str]:
     return None
 
 
-def _lookup_linux(ip: str) -> Optional[str]:
-    out = _run(["ip", "neigh", "show", ip])
+def _proc_arp(device: Optional[str] = None) -> str:
+    """/proc/net/arp, optionally only the lines for one device (last column)."""
+    try:
+        with open("/proc/net/arp", encoding="ascii") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return ""
+    if device:
+        lines = [l for l in lines if l.split() and l.split()[-1] == device]
+    return "\n".join(lines)
+
+
+def _lookup_linux(ip: str, iface=None) -> Optional[str]:
+    out = _run(["ip", "neigh", "show", ip] + (["dev", iface.name] if iface is not None else []))
     for line in out.splitlines():
         # e.g. "192.168.1.10 dev eth0 lladdr aa:bb:cc:dd:ee:ff REACHABLE"
         match = re.search(r"\blladdr\s+(\S+)", line)
@@ -72,33 +84,34 @@ def _lookup_linux(ip: str) -> Optional[str]:
             if mac and mac not in _INVALID_MACS:
                 return mac
     # Fall back to /proc/net/arp when iproute2 is unavailable.
-    try:
-        with open("/proc/net/arp", encoding="ascii") as fh:
-            return _mac_from_lines(fh.read(), ip)
-    except OSError:
-        return None
+    return _mac_from_lines(_proc_arp(iface.name if iface is not None else None), ip)
 
 
-def _lookup_windows(ip: str) -> Optional[str]:
-    return _mac_from_lines(_run(["arp", "-a", ip]), ip)
+def _lookup_windows(ip: str, iface=None) -> Optional[str]:
+    # -N limits the output to the ARP table of the interface with that address.
+    extra = ["-N", iface.address] if iface is not None and iface.address else []
+    return _mac_from_lines(_run(["arp", "-a", ip] + extra), ip)
 
 
-def _lookup_bsd(ip: str) -> Optional[str]:
+def _lookup_bsd(ip: str, iface=None) -> Optional[str]:
+    if iface is not None:
+        return parse_arp_table(_run(["arp", "-an", "-i", iface.name]), "darwin").get(ip)
     return _mac_from_lines(_run(["arp", "-n", ip]), ip)
 
 
-def lookup_mac(ip: str, system: Optional[str] = None) -> Optional[str]:
+def lookup_mac(ip: str, system: Optional[str] = None, iface=None) -> Optional[str]:
     """Return the MAC address the host has learned for ``ip``, or None.
 
     The entry only exists for hosts on the same layer-2 segment as this
     machine, and normally only after traffic (e.g. a ping) has been sent to it.
+    With ``iface`` (a netif.Interface) only that interface's entries are used.
     """
     system = (system or platform.system()).lower()
     if system == "windows":
-        return _lookup_windows(ip)
+        return _lookup_windows(ip, iface)
     if system == "linux":
-        return _lookup_linux(ip)
-    return _lookup_bsd(ip)
+        return _lookup_linux(ip, iface)
+    return _lookup_bsd(ip, iface)
 
 
 # ---------------------------------------------------------------- whole table
@@ -135,18 +148,19 @@ def parse_arp_table(text: str, system: str) -> dict[str, str]:
     return table
 
 
-def read_arp_table(system: Optional[str] = None) -> dict[str, str]:
-    """Return this computer's whole ARP / neighbour table as {ip: mac}."""
+def read_arp_table(system: Optional[str] = None, iface=None) -> dict[str, str]:
+    """Return this computer's ARP / neighbour table as {ip: mac}.
+
+    With ``iface`` (a netif.Interface) only that interface's entries are returned.
+    """
     system = (system or platform.system()).lower()
     if system == "windows":
-        return parse_arp_table(_run(["arp", "-a"]), system)
+        extra = ["-N", iface.address] if iface is not None and iface.address else []
+        return parse_arp_table(_run(["arp", "-a"] + extra), system)
     if system == "linux":
-        table = parse_arp_table(_run(["ip", "-4", "neigh", "show"]), system)
+        dev = ["dev", iface.name] if iface is not None else []
+        table = parse_arp_table(_run(["ip", "-4", "neigh", "show"] + dev), system)
         if table:
             return table
-        try:
-            with open("/proc/net/arp", encoding="ascii") as fh:
-                return parse_arp_table(fh.read(), system)
-        except OSError:
-            return {}
-    return parse_arp_table(_run(["arp", "-an"]), system)
+        return parse_arp_table(_proc_arp(iface.name if iface is not None else None), system)
+    return parse_arp_table(_run(["arp", "-an"] + (["-i", iface.name] if iface else [])), system)

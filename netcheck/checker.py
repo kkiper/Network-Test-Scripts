@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -131,12 +132,21 @@ def check_all(
     mac_fn: Callable[[str], Optional[str]] = lookup_mac,
     progress: Optional[Callable[[CheckResult], None]] = None,
     stop_event: Optional[threading.Event] = None,
+    iface=None,
 ) -> list[CheckResult]:
     """Check every connection in parallel; results keep the inventory order.
 
     Setting ``stop_event`` makes connections that haven't started yet return
     a SKIP "Cancelled" result; checks already in progress finish normally.
+    With ``iface`` (a netif.Interface) pings and MAC lookups only use that
+    interface.
     """
+    if iface is not None:
+        if ping_fn is ping:
+            ping_fn = partial(ping, iface=iface)
+        if mac_fn is lookup_mac:
+            mac_fn = partial(lookup_mac, iface=iface)
+
     def run(conn: Connection) -> CheckResult:
         if stop_event is not None and stop_event.is_set():
             res = CheckResult(conn, SKIP, None, None, MAC_NA, "Cancelled")

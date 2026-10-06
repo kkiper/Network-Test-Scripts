@@ -66,7 +66,7 @@ class DiscoverWindow(tk.Toplevel):
         frame = ttk.LabelFrame(self, text="Sweep (only devices on this computer's subnet/VLAN "
                                           "can be found)", padding=8)
         frame.pack(fill="x", padx=8, pady=8)
-        self.my_address = primary_address()
+        self.my_address = primary_address(self.app.iface)
         self.subnets_var = tk.StringVar(value=", ".join(
             suggest_subnets(self._connections(), fallback=self.my_address)))
         self.timeout_var = tk.DoubleVar(value=0.5)
@@ -93,8 +93,9 @@ class DiscoverWindow(tk.Toplevel):
             "Several:   192.168.1.0/24, 10.0.5.0/26     (the network, not just the mask)")
         ).grid(row=1, column=1, columnspan=7, sticky="w", padx=(4, 0), pady=(2, 0))
         if self.my_address:
+            where = f" on wired interface {self.app.iface.name}" if self.app.iface is not None else ""
             ttk.Label(frame, foreground="#1f4e8c",
-                      text=f"This computer: {self.my_address}").grid(
+                      text=f"This computer: {self.my_address}{where}").grid(
                 row=2, column=1, columnspan=7, sticky="w", padx=(4, 0))
 
         bar = ttk.Frame(self, padding=(8, 0))
@@ -185,8 +186,11 @@ class DiscoverWindow(tk.Toplevel):
                                  "The 'ping' command was not found on this computer.",
                                  parent=self)
             return
+        iface = self.app.require_iface(parent=self)
+        if iface is None:
+            return
         count = sum(n.num_addresses for n in networks)
-        warning = off_subnet_warning(networks, local_addresses(networks))
+        warning = off_subnet_warning(networks, local_addresses(networks, iface), iface)
         if warning and not messagebox.askokcancel("Different subnet", warning + "\n\nSweep "
                                                   "anyway?", icon="warning", parent=self):
             return
@@ -209,7 +213,7 @@ class DiscoverWindow(tk.Toplevel):
             try:
                 found = discover(
                     connections, networks, timeout_s=timeout, workers=workers,
-                    vendors=self.vendors, stop_event=self.stop_event,
+                    vendors=self.vendors, stop_event=self.stop_event, iface=iface,
                     progress=lambda done, total: self.events.put(("progress", done, total)))
                 self.events.put(("done", found))
             except Exception as exc:  # report anything unexpected in the GUI

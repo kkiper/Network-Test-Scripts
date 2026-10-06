@@ -14,6 +14,7 @@ from netcheck.checker import (
 from netcheck.cli import main
 from netcheck.inventory import Connection, InventoryError, load_inventory
 from netcheck.ping import PingResult, build_ping_command, parse_ping_output
+from tests.test_netif import patch_wired
 
 # A frozen copy of the example inventory, so the shipped example can change freely.
 EXAMPLE = os.path.join(os.path.dirname(__file__), "fixtures", "sample_inventory.json")
@@ -276,7 +277,7 @@ class EndToEndTests(unittest.TestCase):
         with mock.patch("netcheck.checker.ping", fake_ping(pings)), \
                 mock.patch("netcheck.cli.shutil.which", return_value="/bin/ping"), \
                 mock.patch("netcheck.cli.check_all") as patched, \
-                mock.patch("sys.stdout", out), mock.patch("sys.stderr", io.StringIO()):
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", io.StringIO()), patch_wired():
             patched.side_effect = lambda conns, **kw: check_all(
                 conns, ping_fn=fake_ping(pings), mac_fn=macs.get,
                 **{k: v for k, v in kw.items() if k != "progress"})

@@ -8,7 +8,7 @@ import sys
 import threading
 from typing import Optional
 
-from . import __version__
+from . import __version__, netif
 from .checker import FAIL, check_all
 from .inventory import InventoryError, load_inventory
 from .report import print_table, write_baseline, write_report
@@ -26,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
             "ping each connected device and verify its MAC address."
         ),
     )
-    parser.add_argument("inventory", help="JSON file describing the expected interconnect")
+    parser.add_argument("inventory", nargs="?", help="JSON file describing the expected interconnect")
     parser.add_argument("-c", "--count", type=int, default=2,
                         help="ping packets per device (default: 2)")
     parser.add_argument("-t", "--timeout", type=float, default=1.0,
@@ -46,12 +46,19 @@ def build_parser() -> argparse.ArgumentParser:
                         help="disable coloured output")
     parser.add_argument("-q", "--quiet", action="store_true",
                         help="don't print per-device progress")
+    netif.add_cli_arguments(parser)
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    iface, code = netif.resolve_cli_interface(args)
+    if code is not None:
+        return code
+    if not args.inventory:
+        parser.error("the inventory file is required")
     if args.count < 1 or args.timeout <= 0 or args.workers < 1:
         print("error: --count and --workers must be >= 1 and --timeout > 0", file=sys.stderr)
         return EXIT_BAD_INPUT
@@ -89,7 +96,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                       file=sys.stderr, flush=True)
 
     print(f"Testing {total} connection(s) from {args.inventory} ...", file=sys.stderr)
-    results = check_all(connections, count=args.count, timeout_s=args.timeout,
+    results = check_all(connections, count=args.count, timeout_s=args.timeout, iface=iface,
                         workers=args.workers, progress=progress)
     print(file=sys.stderr)
 

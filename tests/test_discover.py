@@ -18,6 +18,7 @@ from netcheck.discover import (
 from netcheck.inventory import load_inventory
 from netcheck.mac import is_locally_administered, parse_arp_table
 from netcheck.ping import PingResult
+from tests.test_netif import patch_wired
 
 # A frozen copy of the example inventory, so the shipped example can change freely.
 EXAMPLE = os.path.join(os.path.dirname(__file__), "fixtures", "sample_inventory.json")
@@ -225,7 +226,7 @@ class DiscoverCliTests(unittest.TestCase):
                                                        local_ips={"192.168.1.5"}, **kw)), \
                 mock.patch.object(discovercli.shutil, "which", return_value="/bin/ping"), \
                 mock.patch.object(discovercli, "local_addresses", return_value={"192.168.1.5"}), \
-                mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", err), patch_wired():
             code = discovercli.main(args)
         return code, out.getvalue(), err.getvalue()
 

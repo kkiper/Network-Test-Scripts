@@ -344,6 +344,9 @@ class PortVerifyWindow(tk.Toplevel):
             messagebox.showerror("Test switch", "Enter the management IP and username.",
                                  parent=self)
             return
+        iface = self.app.require_iface(parent=self)
+        if iface is None:
+            return
         self.save_settings(settings)
         self.replan()
         password, secret = self.password_var.get(), self.secret_var.get()
@@ -354,7 +357,7 @@ class PortVerifyWindow(tk.Toplevel):
             if old is not None:
                 old.close()
             try:
-                session = connect(settings, password, secret)
+                session = connect(settings, password, secret, iface=iface)
                 errors, warnings = preflight(session, settings)
                 self.events.put(("connected", session, errors, warnings,
                                  getattr(session, "hostname", "")))

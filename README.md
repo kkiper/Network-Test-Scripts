@@ -42,6 +42,8 @@ port of each *connected* device from the MAC address table, and to check ports t
   is included with the python.org installers for Windows and macOS; on Linux install
   it with your package manager (e.g. `sudo apt install python3-tk`).
 - The OS `ping` command. Works on Windows, Linux and macOS.
+- A wired Ethernet connection with an IPv4 address: the tools never use Wi-Fi (see
+  [Wired interface only](#wired-interface-only)).
 - Run it from a machine on the **same subnet/VLAN** as the devices: MAC addresses are
   only visible via ARP for hosts on the local layer-2 segment. Devices behind a router
   will ping fine but show `UNRESOLVED` MACs (reported as WARN).
@@ -160,6 +162,31 @@ production switch (SW-CORE-01). Any daisy-chained switch (SW-EDGE-02) hangs off 
   switch instead of reporting it as unknown.
 - Nothing is configured on SW-CORE-01 or SW-EDGE-02. The only configuration goes on the test
   switch: [`docs/test_switch_c9200.cfg`](docs/test_switch_c9200.cfg).
+
+## Wired interface only
+
+The tools only ever use the laptop's **wired Ethernet** interface. Wi-Fi can stay switched on;
+it's ignored, even if it's on the same subnet.
+
+- **Pings** go out through the wired interface: `ping -S <address>` on Windows, `ping -I <name>`
+  on Linux, `ping -b <name>` on macOS.
+- **MAC addresses** are read only from the wired interface's ARP table.
+- **Discover** sweeps and reads ARP on that interface, and its "This computer" hint and
+  suggested subnet come from the wired address and its real prefix.
+- **SSH to the test switch** leaves from the wired interface's address.
+
+Wired adapters are found automatically: PowerShell's `Get-NetAdapter` on Windows (built-in, USB and
+dock Ethernet), `/sys/class/net` on Linux, `networksetup` on macOS. Wi-Fi, Bluetooth and virtual
+adapters are skipped. An adapter counts only when it's connected and has an IPv4 address
+(link-local 169.254.x.x doesn't count).
+
+- **GUI:** the **Wired interface** bar at the top of the main window shows the interface in use.
+  - **One wired connection:** chosen automatically.
+  - **Several (e.g. built-in plus a USB adapter):** pick one from the list.
+  - **None:** the bar says so in red. Plug in the cable, set the address and press **Refresh**.
+- **Command line:** `--list-interfaces` lists the wired interfaces. `--interface NAME` chooses one
+  by name, alias, description or IP address; it's needed only when several are connected.
+  `--interface any` lets the OS choose (Wi-Fi may then be used; not recommended).
 
 ## Verifying unused runs with a test switch
 
@@ -409,6 +436,7 @@ netcheck/portverify.py    batch planning, test-switch checks and grading of unus
 netcheck/cisco.py         parsers for Cisco CDP/LLDP/interface/TDR output
 netcheck/switch.py        SSH session to the test switch (Netmiko)
 netcheck/portcli.py       command-line options for port_verify.py
+netcheck/netif.py         finds the wired Ethernet interface(s) on Windows, Linux and macOS
 netcheck/discover.py      subnet sweep, ARP table comparison and classification
 netcheck/discovercli.py   command-line options for discover.py
 netcheck/gui_discover.py  GUI window for device discovery

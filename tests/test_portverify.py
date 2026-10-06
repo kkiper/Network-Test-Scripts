@@ -16,6 +16,7 @@ from netcheck.inventory import Connection, InventoryError
 from netcheck.portverify import (
     Assignment, TestSwitchSettings, plan_batches, preflight, verify_batch,
 )
+from tests.test_netif import patch_wired
 
 # A frozen copy of the example inventory, so the shipped example can change freely.
 EXAMPLE = os.path.join(os.path.dirname(__file__), "fixtures", "sample_inventory.json")
@@ -380,7 +381,7 @@ class CliTests(unittest.TestCase):
                 mock.patch.dict(os.environ, {portcli.PASSWORD_ENV: "pw"}), \
                 mock.patch("builtins.input", return_value=""), \
                 mock.patch("netcheck.portverify.time.sleep"), \
-                mock.patch("sys.stdout", out), mock.patch("sys.stderr", io.StringIO()):
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", io.StringIO()), patch_wired():
             code = portcli.main([path, "-o", report, "--no-colour"])
         self.assertEqual(code, 1)
         text = out.getvalue()

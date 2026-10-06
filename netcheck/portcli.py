@@ -8,7 +8,7 @@ import os
 import sys
 from typing import Optional
 
-from . import __version__
+from . import __version__, netif
 from .checker import FAIL, CheckResult
 from .cisco import expand_port_range
 from .inventory import InventoryError, parse_inventory, read_json
@@ -37,7 +37,8 @@ def build_parser() -> argparse.ArgumentParser:
                 f"secret (if needed) from ${SECRET_ENV}. Settings not given on the command "
                 'line come from the inventory\'s "test_switch" section.'),
     )
-    parser.add_argument("inventory", help="JSON file describing the expected interconnect")
+    parser.add_argument("inventory", nargs="?",
+                        help="JSON file describing the expected interconnect")
     parser.add_argument("--host", help="test switch management IP / hostname")
     parser.add_argument("--username", help="test switch SSH username")
     parser.add_argument("--ports", help="copper test ports to use, e.g. 'Gi1/0/1-22'")
@@ -60,6 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-o", "--output", help="write a report file (.csv or .json)")
     parser.add_argument("--no-colour", "--no-color", action="store_true",
                         help="disable coloured output")
+    netif.add_cli_arguments(parser)
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser
 
@@ -96,7 +98,13 @@ def print_plan(batch, number: int, total: int) -> None:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    iface, code = netif.resolve_cli_interface(args)
+    if code is not None:
+        return code
+    if not args.inventory:
+        parser.error("the inventory file is required")
     try:
         data = read_json(args.inventory)
         connections = parse_inventory(data, args.inventory)
@@ -128,7 +136,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     password = os.environ.get(PASSWORD_ENV) or getpass.getpass(
         f"Password for {settings.username or '?'}@{settings.host or '?'}: ")
     try:
-        session = connect(settings, password, os.environ.get(SECRET_ENV, ""))
+        session = connect(settings, password, os.environ.get(SECRET_ENV, ""), iface=iface)
     except SwitchError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_BAD_INPUT

@@ -22,16 +22,21 @@ class PingResult:
 
 
 def build_ping_command(
-    ip: str, count: int, timeout_s: float, system: Optional[str] = None
+    ip: str, count: int, timeout_s: float, system: Optional[str] = None, iface=None
 ) -> list[str]:
+    """The OS ping command. ``iface`` (a netif.Interface) pins it to that interface."""
     system = (system or platform.system()).lower()
+    source = iface.address if iface is not None else None
     if system == "windows":
-        return ["ping", "-n", str(count), "-w", str(int(timeout_s * 1000)), ip]
+        cmd = ["ping", "-n", str(count), "-w", str(int(timeout_s * 1000))]
+        return cmd + (["-S", source] if source else []) + [ip]
     if system == "darwin":
-        # macOS: -W is the per-reply wait in milliseconds.
-        return ["ping", "-c", str(count), "-W", str(int(timeout_s * 1000)), ip]
+        # macOS: -W is the per-reply wait in milliseconds; -b binds to an interface.
+        cmd = ["ping", "-c", str(count), "-W", str(int(timeout_s * 1000))]
+        return cmd + (["-b", iface.name] if iface is not None else []) + [ip]
     # Linux (iputils/busybox): -W is the per-reply wait in whole seconds.
-    return ["ping", "-c", str(count), "-W", str(max(1, math.ceil(timeout_s))), ip]
+    cmd = ["ping", "-c", str(count), "-W", str(max(1, math.ceil(timeout_s)))]
+    return cmd + (["-I", iface.name] if iface is not None else []) + [ip]
 
 
 def parse_ping_output(output: str, sent: int, system: Optional[str] = None) -> PingResult:
@@ -60,9 +65,12 @@ def parse_ping_output(output: str, sent: int, system: Optional[str] = None) -> P
     )
 
 
-def ping(ip: str, count: int = 2, timeout_s: float = 1.0) -> PingResult:
-    """Ping ``ip`` ``count`` times, waiting ``timeout_s`` seconds per reply."""
-    cmd = build_ping_command(ip, count, timeout_s)
+def ping(ip: str, count: int = 2, timeout_s: float = 1.0, iface=None) -> PingResult:
+    """Ping ``ip`` ``count`` times, waiting ``timeout_s`` seconds per reply.
+
+    With ``iface`` (a netif.Interface) the ping only leaves through that interface.
+    """
+    cmd = build_ping_command(ip, count, timeout_s, iface=iface)
     try:
         proc = subprocess.run(
             cmd,

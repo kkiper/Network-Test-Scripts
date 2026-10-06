@@ -20,6 +20,7 @@ from netcheck.portverify import (
 from tests.test_portverify import (
     STATUS_HEADER, Clock, FakeSession, cdp_entry, status_line, unused,
 )
+from tests.test_netif import patch_wired
 
 SECTION = """
            {title1:<25}High Alarm  High Warn  Low Warn   Low Alarm
@@ -300,7 +301,7 @@ class FiberCliTests(unittest.TestCase):
                 mock.patch("builtins.input", return_value=""), \
                 mock.patch("netcheck.portverify.POLL_INTERVAL_S", 0), \
                 mock.patch("netcheck.portverify.DEFAULT_FIBER_SOAK_S", 0), \
-                mock.patch("sys.stdout", out), mock.patch("sys.stderr", io.StringIO()):
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", io.StringIO()), patch_wired():
             code = portcli.main([path, "--host", "h", "--username", "u",
                                  "--fiber-ports", "Te1/1/1", "--fiber-soak", "0", "--no-colour"])
         text = out.getvalue()
