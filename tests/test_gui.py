@@ -48,7 +48,7 @@ class GuiTests(unittest.TestCase):
 
     def wait_for_run(self):
         deadline = time.time() + 10
-        while (self.app.running() or not self.app.last_run) and time.time() < deadline:
+        while (self.app.running() or not self.app.events.empty()) and time.time() < deadline:
             self.root.update()
             time.sleep(0.02)
         self.root.update()
@@ -94,6 +94,77 @@ class GuiTests(unittest.TestCase):
         problems = self.app._dialog_problems(2, dict(self.app.entries[1], ip="192.168.1.1"))
         self.assertEqual(problems, ["duplicate IP address '192.168.1.1' (also on connection #1)"])
         self.assertEqual(self.app._dialog_problems(2, self.app.entries[1]), [])
+
+
+class FakeTestSwitch:
+    """Test switch where test port 1 lands correctly and port 2 on the wrong port."""
+
+    privileged = True
+    hostname = "NETTEST"
+
+    def run(self, command):
+        return ""
+
+    def send(self, command):
+        from tests.test_portverify import STATUS_HEADER, cdp_entry, status_line
+        if command == "show interfaces status":
+            return STATUS_HEADER + status_line("Gi1/0/1") + status_line("Gi1/0/2")
+        if command == "show cdp neighbors detail":
+            return (cdp_entry("SW-CORE-01", "Gi1/0/1", "Gi1/0/5")
+                    + cdp_entry("SW-CORE-01", "Gi1/0/2", "Gi1/0/16"))
+        return ""
+
+    def close(self):
+        pass
+
+
+@unittest.skipIf(tk is None, "tkinter not available")
+class PortVerifyGuiTests(GuiTests):
+    def wait(self, window):
+        deadline = time.time() + 10
+        while (window.running() or not window.events.empty()) and time.time() < deadline:
+            self.root.update()
+            time.sleep(0.02)
+        self.root.update()
+
+    def test_verify_unused_ports(self):
+        from netcheck import gui_portverify
+        with mock.patch.object(gui_portverify, "connect", return_value=FakeTestSwitch()), \
+                mock.patch.object(gui_portverify.messagebox, "showerror") as error:
+            self.app.open_port_verify()
+            window = self.app.port_window
+            window.host_var.set("10.0.0.2")
+            window.user_var.set("admin")
+            window.ports_var.set("Gi1/0/1-2")
+            window.replan()
+            self.assertEqual([[a.connection.panel_port for a in b] for b in window.batches],
+                             [["5", "6"]])
+            window.connect()
+            self.wait(window)
+            error.assert_not_called()
+            self.assertIn("Connected to NETTEST", window.conn_status.cget("text"))
+            self.assertEqual(self.app.data["test_switch"]["ports"], ["Gi1/0/1", "Gi1/0/2"])
+            self.assertNotIn("password", json.dumps(self.app.data["test_switch"]))
+
+            window.verify()
+            self.wait(window)
+            self.assertEqual(window.tree.set("GigabitEthernet1/0/1", "status"), "PASS")
+            self.assertEqual(window.tree.set("GigabitEthernet1/0/2", "status"), "FAIL")
+            # Results show in the main table too.
+            self.assertEqual(self.app.tree.set("5", "result"), "PASS")
+            self.assertEqual(self.app.tree.set("6", "result"), "FAIL")
+            window.close()
+
+        # A later ping test keeps the port verification results.
+        self.app.run_test()
+        self.wait_for_run()
+        self.assertEqual(self.app.tree.set("6", "result"), "FAIL")
+        self.assertIn("Gi1/0/16", self.app.tree.set("6", "message"))
+        self.assertEqual({r.connection.index for r in self.app.last_run}, set(range(1, 9)))
+
+    # Don't re-run the inherited ping tests in this class.
+    test_run_accept_and_save = test_filter_by_switch = None
+    test_invalid_entry_blocks_run = test_dialog_rejects_duplicates = None
 
 
 if __name__ == "__main__":

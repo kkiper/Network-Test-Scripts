@@ -21,6 +21,11 @@ from .inventory import (
 )
 from .report import fill_discovered_macs, result_row, save_json, write_report
 
+try:
+    from .gui_portverify import PortVerifyWindow
+except ImportError:  # pragma: no cover - only if the module is missing
+    PortVerifyWindow = None
+
 APP_TITLE = "Network Interconnect Test"
 ALL = "(all)"
 INVALID = "INVALID"
@@ -62,6 +67,7 @@ FIELD_LABELS = {
     "ip": "IP address",
     "expected_mac": "Expected MAC",
     "status": "Status",
+    "far_end": "Test point",
     "notes": "Notes",
 }
 
@@ -107,7 +113,8 @@ class ConnectionDialog(tk.Toplevel):
                 widget.focus_set()
 
         hint = ("MAC may be in any format (aa:bb:cc:dd:ee:ff, AA-BB-..., aabb.ccdd.eeff).\n"
-                "Leave IP/MAC blank if unknown. Unused ports have no device or IP.")
+                "Leave IP/MAC blank if unknown. Unused ports have no device or IP.\n"
+                "Test point: where the test switch plugs in to reach this run (e.g. PP-Z:5).")
         ttk.Label(body, text=hint, foreground="#555555").grid(
             row=len(KNOWN_FIELDS), column=0, columnspan=2, sticky="w", pady=(8, 0))
         self._error = ttk.Label(body, text="", foreground="#b00020", wraplength=380)
@@ -176,6 +183,7 @@ class InterconnectApp:
         self.stop_event = threading.Event()
         self.events: "queue.Queue" = queue.Queue()
         self.sort_state: tuple[str, bool] = ("", False)
+        self.port_window = None
 
         root.title(APP_TITLE)
         root.geometry("1280x720")
@@ -217,6 +225,12 @@ class InterconnectApp:
         file_menu.add_command(label="Exit", command=self.quit)
         menubar.add_cascade(label="File", menu=file_menu)
 
+        tools_menu = tk.Menu(menubar, tearoff=False)
+        tools_menu.add_command(label="Run Ping/MAC Test", accelerator="F5", command=self.run_test)
+        tools_menu.add_command(label="Verify Unused Ports with Test Switch...",
+                               command=self.open_port_verify)
+        menubar.add_cascade(label="Tools", menu=tools_menu)
+
         help_menu = tk.Menu(menubar, tearoff=False)
         help_menu.add_command(label="How to use", command=self.show_help)
         help_menu.add_command(label="About", command=lambda: messagebox.showinfo(
@@ -238,6 +252,8 @@ class InterconnectApp:
         ]
         for button in self.edit_buttons:
             button.pack(side="left", padx=(4, 0))
+        ttk.Button(bar, text="Verify Unused Ports...", command=self.open_port_verify).pack(
+            side="right")
 
     def _build_options(self) -> None:
         frame = ttk.LabelFrame(self.root, text="Test", padding=8)
@@ -248,7 +264,7 @@ class InterconnectApp:
         self.export_button.pack(side="right")
         self.stop_button = ttk.Button(frame, text="Stop", command=self.stop_test, state="disabled")
         self.stop_button.pack(side="right", padx=4)
-        self.run_button = ttk.Button(frame, text="Run Test (F5)", style="Run.TButton",
+        self.run_button = ttk.Button(frame, text="Ping Test (F5)", style="Run.TButton",
                                      command=self.run_test)
         self.run_button.pack(side="right", padx=4)
 
@@ -505,6 +521,47 @@ class InterconnectApp:
         if clear_all:
             self.clear_results()
         self.refresh()
+        if self.port_window is not None and not self.port_window.running():
+            self.port_window.replan()
+
+    # ------------------------------------------------------- port verification
+
+    def open_port_verify(self) -> None:
+        if self.port_window is not None:
+            self.port_window.lift()
+            return
+        if self.running():
+            return
+        if self.problems():
+            messagebox.showerror("Fix the inventory first",
+                                 "\n".join(self.problems()[:20]), parent=self.root)
+            return
+        self.port_window = PortVerifyWindow(self)
+
+    def filtered(self, connections: list) -> list:
+        """Apply the Switch / Patch panel filters chosen in the main window."""
+        if self.switch_var.get() != ALL:
+            connections = [c for c in connections if c.switch == self.switch_var.get()]
+        if self.panel_var.get() != ALL:
+            connections = [c for c in connections if c.patch_panel == self.panel_var.get()]
+        return connections
+
+    def filter_note(self) -> str:
+        parts = [f"switch {v.get()}" for v in (self.switch_var,) if v.get() != ALL]
+        parts += [f"patch panel {v.get()}" for v in (self.panel_var,) if v.get() != ALL]
+        return f" (only {', '.join(parts)})" if parts else ""
+
+    def add_results(self, results: list) -> None:
+        """Merge results from elsewhere (port verification) into the table."""
+        indexes = {r.connection.index for r in results}
+        self.last_run = [r for r in self.last_run if r.connection.index not in indexes]
+        self.last_run.extend(results)
+        self.last_run.sort(key=lambda r: r.connection.index)
+        for res in results:
+            self.results[res.connection.index] = res
+            self.update_row(res)
+        self.update_summary()
+        self.show_details()
 
     # ------------------------------------------------------------------- view
 
@@ -590,7 +647,14 @@ class InterconnectApp:
                           for k, v in entry.items() if v not in (None, "")]
                 lines.append(f"#{index}   " + "   |   ".join(fields))
             res = self.results.get(index)
-            if res:
+            if res and res.port_check:
+                pc = res.port_check
+                lines.append(f"{res.result}: {res.message}")
+                lines.append(f"Test port: {pc.test_port}   |   Link: {pc.link or '-'}   |   "
+                             f"Seen on: {(pc.seen_switch + ' ' + pc.seen_port).strip() or '-'}"
+                             + (f" ({pc.protocol})" if pc.protocol else "")
+                             + (f"   |   Cable test: {pc.cable_test}" if pc.cable_test else ""))
+            elif res:
                 ping = (f"{res.ping.replies}/{res.ping.sent} replies"
                         + (f", avg {res.ping.avg_rtt_ms} ms" if res.ping.avg_rtt_ms else "")
                         if res.ping else "not pinged")
@@ -629,19 +693,24 @@ class InterconnectApp:
             "Add Connection: one row per patch panel port.\n\n"
             "2. Mark ports with nothing patched in as 'unused'. Give each connected "
             "device its IP address, and its MAC if known.\n\n"
-            "3. Press Run Test (F5). Each device is pinged and its MAC read from this "
+            "3. Press Ping Test (F5). Each device is pinged and its MAC read from this "
             "computer's ARP table, then compared with the expected MAC.\n\n"
             "   PASS  reachable and MAC matches (or newly discovered)\n"
             "   FAIL  unreachable, or a different MAC answered\n"
             "   WARN  reachable but MAC unknown, or ARP-only reply\n"
             "   SKIP  unused port or no IP address\n\n"
             "4. Use 'Accept Discovered MACs' to record MACs you didn't have yet, then Save.\n\n"
+            "5. Use 'Verify Unused Ports' to check unused runs with a test switch: patch "
+            "its ports to the runs it lists, and it reads which production switch port "
+            "each run lands on (CDP/LLDP).\n\n"
             "Run from a computer on the same subnet/VLAN as the devices - MACs are only "
             "visible for devices on the local network segment."), parent=self.root)
 
     # ------------------------------------------------------------------- test
 
     def running(self) -> bool:
+        if self.port_window is not None and self.port_window.running():
+            return True
         return self.worker is not None and self.worker.is_alive()
 
     def run_test(self) -> None:
@@ -671,10 +740,9 @@ class InterconnectApp:
                 "and Timeout must be greater than 0.", parent=self.root)
             return
 
-        if self.switch_var.get() != ALL:
-            connections = [c for c in connections if c.switch == self.switch_var.get()]
-        if self.panel_var.get() != ALL:
-            connections = [c for c in connections if c.patch_panel == self.panel_var.get()]
+        # Keep port verification results; pinging can't add anything to those rows.
+        verified = {i: r for i, r in self.results.items() if r.port_check is not None}
+        connections = [c for c in self.filtered(connections) if c.index not in verified]
         if not connections:
             messagebox.showinfo("Nothing to test", "No connections match the selected filters.",
                                 parent=self.root)
@@ -687,6 +755,8 @@ class InterconnectApp:
             return
 
         self.clear_results()
+        self.results = dict(verified)
+        self.last_run = list(verified.values())
         self.refresh()
         for conn in connections:
             self.tree.set(str(conn.index), "result", PENDING)
@@ -732,7 +802,7 @@ class InterconnectApp:
             messagebox.showerror("Test failed", f"Unexpected error: {payload}", parent=self.root)
             self.set_status("Test failed")
             return
-        self.last_run = payload
+        self.last_run = sorted(self.last_run + payload, key=lambda r: r.connection.index)
         self.show_details()
         fails = sum(r.result == FAIL for r in payload)
         stopped = " (stopped)" if self.stop_event.is_set() else ""

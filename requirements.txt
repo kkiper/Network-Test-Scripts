@@ -1,0 +1,3 @@
+# The ping/MAC test and the GUI need only the Python standard library.
+# Verifying unused ports with the test switch needs Netmiko (SSH to Cisco):
+netmiko>=4.0

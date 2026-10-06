@@ -1,5 +1,12 @@
 {
-  "description": "Expected physical interconnect. One entry per patch panel port. status: 'connected' = a device should be patched here; 'unused' = port should be empty. expected_mac may be left out - run with --write-baseline to capture it.",
+  "description": "Expected physical interconnect. One entry per patch panel port. status: 'connected' = a device should be patched here; 'unused' = port should be empty. expected_mac may be left out - run with --write-baseline to capture it. far_end (optional) says where to plug the test switch in to reach an unused run.",
+  "test_switch": {
+    "host": "192.168.100.2",
+    "username": "admin",
+    "ports": "Gi1/0/1-23",
+    "cdp_timeout": 90,
+    "cable_test": false
+  },
   "connections": [
     {
       "patch_panel": "PP-A",
@@ -49,6 +56,7 @@
       "switch": "SW-CORE-01",
       "switch_port": "Gi1/0/5",
       "status": "unused",
+      "far_end": "PP-Z:5",
       "notes": "Spare"
     },
     {
@@ -57,6 +65,7 @@
       "switch": "SW-CORE-01",
       "switch_port": "Gi1/0/6",
       "status": "unused",
+      "far_end": "PP-Z:6",
       "notes": "Spare"
     },
     {

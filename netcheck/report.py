@@ -25,6 +25,11 @@ REPORT_COLUMNS = (
     "mac_check",
     "ping_replies",
     "avg_rtt_ms",
+    "test_port",
+    "link",
+    "seen_switch",
+    "seen_port",
+    "cable_test",
     "message",
 )
 
@@ -34,6 +39,7 @@ _RESET = "\033[0m"
 
 def result_row(res: CheckResult) -> dict:
     c = res.connection
+    pc = res.port_check
     return {
         "result": res.result,
         "patch_panel": c.patch_panel,
@@ -47,6 +53,11 @@ def result_row(res: CheckResult) -> dict:
         "mac_check": res.mac_check,
         "ping_replies": f"{res.ping.replies}/{res.ping.sent}" if res.ping else "",
         "avg_rtt_ms": "" if not res.ping or res.ping.avg_rtt_ms is None else res.ping.avg_rtt_ms,
+        "test_port": pc.test_port if pc else "",
+        "link": pc.link if pc else "",
+        "seen_switch": pc.seen_switch if pc else "",
+        "seen_port": pc.seen_port if pc else "",
+        "cable_test": pc.cable_test if pc else "",
         "message": res.message,
     }
 

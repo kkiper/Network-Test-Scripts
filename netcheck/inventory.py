@@ -22,6 +22,7 @@ KNOWN_FIELDS = (
     "ip",
     "expected_mac",
     "status",
+    "far_end",
     "notes",
 )
 
@@ -43,6 +44,7 @@ class Connection:
     ip: str = ""
     expected_mac: Optional[str] = None
     status: str = STATUS_CONNECTED
+    far_end: str = ""  # where the test switch plugs in to reach this run
     notes: str = ""
     extra: dict = field(default_factory=dict)
 
@@ -53,6 +55,13 @@ class Connection:
         if self.patch_panel or self.panel_port:
             return f"{self.patch_panel}:{self.panel_port}"
         return f"connection #{self.index}"
+
+    @property
+    def connect_point(self) -> str:
+        """Where to plug the test switch in to test this run."""
+        if self.far_end:
+            return self.far_end
+        return f"far end of {self.patch_panel or '?'} port {self.panel_port or '?'}"
 
 
 def read_json(path: str) -> Any:
@@ -159,6 +168,7 @@ def _parse_entry(entry: Any, index: int) -> tuple[Optional[Connection], list[str
         ip=ip,
         expected_mac=mac,
         status=status,
+        far_end=fields["far_end"],
         notes=fields["notes"],
         extra={k: v for k, v in entry.items() if k not in KNOWN_FIELDS},
     )

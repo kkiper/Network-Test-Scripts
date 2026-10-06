@@ -24,6 +24,18 @@ MAC_NA = "N/A"
 
 
 @dataclass
+class PortCheck:
+    """What the test switch saw on the port patched to an unused run."""
+
+    test_port: str
+    link: str = ""
+    seen_switch: str = ""
+    seen_port: str = ""
+    protocol: str = ""
+    cable_test: str = ""
+
+
+@dataclass
 class CheckResult:
     connection: Connection
     result: str
@@ -31,6 +43,7 @@ class CheckResult:
     discovered_mac: Optional[str]
     mac_check: str
     message: str
+    port_check: Optional[PortCheck] = None
 
 
 def evaluate(
@@ -40,7 +53,7 @@ def evaluate(
     if conn.status == STATUS_UNUSED:
         return CheckResult(
             conn, SKIP, None, None, MAC_NA,
-            "Unused port - nothing to ping (switch port check not yet implemented)",
+            "Unused port - nothing to ping (verify it with the test switch)",
         )
     if not conn.ip:
         return CheckResult(conn, SKIP, None, None, MAC_NA, "No IP address defined - cannot ping")
