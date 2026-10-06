@@ -158,6 +158,13 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(conn.status, "connected")
         self.assertIsNone(conn.expected_mac)
 
+    def test_missing_file_explains_what_to_do(self):
+        with self.assertRaises(InventoryError) as ctx:
+            load_inventory("does_not_exist.json")
+        msg = str(ctx.exception)
+        self.assertIn("Inventory file not found", msg)
+        self.assertIn("expected_interconnect.json", msg)
+
     def test_structure_errors(self):
         for data, expected in [
             ('{"connections": [', "invalid JSON at line 1"),

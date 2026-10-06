@@ -102,6 +102,7 @@ production ports isn't triggered. The tool refuses to use test ports that aren't
 
 ```sh
 pip install -r requirements.txt
+# my_network.json = your inventory file (see "Describing the expected interconnect")
 python port_verify.py my_network.json --host 192.168.100.2 --username admin --ports Gi1/0/1-23
 ```
 
@@ -131,7 +132,18 @@ Notes:
 
 ## Describing the expected interconnect
 
-You can create and edit the file in the GUI, or by hand:
+`my_network.json` in the commands in this README stands for **your own** inventory file.
+To make one, either:
+
+- copy [`examples/expected_interconnect.json`](examples/expected_interconnect.json) to
+  `my_network.json` and replace the example rows with your patch panels, switches and devices; or
+- start the GUI (`python interconnect_gui.py`), use **Add Connection** for each patch-panel
+  port, then **File > Save As**.
+
+To try the tools first, use the example file itself, e.g.
+`python port_verify.py examples/expected_interconnect.json ...`. Its switch names (`SW-CORE-01`
+etc.) are made up, though, so port verification against your real switches will report them
+as mismatches.
 
 It is a JSON file with a top-level object containing a `connections` list, with one
 entry per patch-panel port. See

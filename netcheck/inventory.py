@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -68,12 +69,37 @@ def read_json(path: str) -> Any:
     try:
         with open(path, encoding="utf-8-sig") as fh:
             return json.load(fh)
+    except FileNotFoundError as exc:
+        raise InventoryError(_not_found_message(path)) from exc
     except OSError as exc:
         raise InventoryError(f"Cannot open inventory file: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise InventoryError(
             f"{path}: invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}"
         ) from exc
+
+
+def _not_found_message(path: str) -> str:
+    """Explain a missing inventory file and point at the ways to get one."""
+    folder = os.path.dirname(os.path.abspath(path))
+    lines = [f"Inventory file not found: {os.path.abspath(path)}"]
+    try:
+        nearby = sorted(f for f in os.listdir(folder) if f.lower().endswith(".json"))
+    except OSError:
+        nearby = []
+    if nearby:
+        lines.append(f"JSON files in {folder}: {', '.join(nearby)}")
+    example = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           "examples", "expected_interconnect.json")
+    try:
+        shown = os.path.relpath(example)
+    except ValueError:  # different drive on Windows
+        shown = example
+    if shown.startswith(".."):
+        shown = example
+    lines.append(f"Create your inventory by copying and editing {shown}, or build it in the "
+                 "GUI (interconnect_gui.py, then File > Save As).")
+    return "\n".join(lines)
 
 
 def load_inventory(path: str) -> list[Connection]:
