@@ -214,6 +214,21 @@ class CheckerTests(unittest.TestCase):
         self.assertEqual([r.result for r in res], [SKIP, SKIP])
 
 
+class StopTests(unittest.TestCase):
+    def test_stop_event_cancels_pending_checks(self):
+        import threading
+        stop = threading.Event()
+        conns = [Connection(index=i, ip=f"10.0.0.{i}") for i in range(1, 6)]
+
+        def ping(ip, count, timeout_s):
+            stop.set()  # request a stop as soon as the first ping runs
+            return PingResult(True, 1, 1, 1.0)
+
+        res = check_all(conns, workers=1, ping_fn=ping, mac_fn=lambda ip: None, stop_event=stop)
+        self.assertEqual(res[0].result, WARN)
+        self.assertEqual([r.message for r in res[1:]], ["Cancelled"] * 4)
+
+
 class EndToEndTests(unittest.TestCase):
     def test_cli_with_example(self):
         pings = {

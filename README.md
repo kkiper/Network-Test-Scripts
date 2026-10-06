@@ -3,7 +3,7 @@
 Tools for verifying a local network against its **expected physical interconnect**
 (which device is patched into which patch-panel port and switch port).
 
-Current capability (`interconnect_test.py`):
+Current capability (desktop GUI `interconnect_gui.py`, or command line `interconnect_test.py`):
 
 - Ping every device that should be connected.
 - Discover each device's MAC address from this machine's ARP/neighbour table.
@@ -16,15 +16,45 @@ device — and each *unused* patch-panel port — is actually on the expected sw
 
 ## Requirements
 
-- Python 3.8+ (standard library only, nothing to install).
+- Python 3.8+ (standard library only, nothing to install). The GUI uses Tkinter, which
+  is included with the python.org installers for Windows and macOS; on Linux install
+  it with your package manager (e.g. `sudo apt install python3-tk`).
 - The OS `ping` command. Works on Windows, Linux and macOS.
 - Run it from a machine on the **same subnet/VLAN** as the devices: MAC addresses are
   only visible via ARP for hosts on the local layer-2 segment. Devices behind a router
   will ping fine but show `UNRESOLVED` MACs (reported as WARN).
 
+## Desktop GUI
+
+![Interconnect test GUI](docs/gui.png)
+
+Start it with:
+
+```sh
+python interconnect_gui.py                      # then File > Open
+python interconnect_gui.py my_network.json      # open a file straight away
+```
+
+On Windows you can double-click **`interconnect_gui.pyw`** to start it without a console window.
+
+1. **Open** an expected interconnect file, or build one from scratch with **Add Connection**
+   (one row per patch-panel port; the new row is pre-filled with the selected row's
+   panel and switch). Double-click a row to **Edit** it. Mistakes such as invalid IPs or
+   MACs and duplicate IPs, MACs or ports are caught as you enter them, and any invalid
+   rows in an opened file are highlighted.
+2. Pick the ping settings and optionally a single **Switch** or **Patch panel**, then press
+   **Run Test** (F5). Rows turn green/red/yellow as results come in; **Stop** cancels the
+   rest of the run.
+3. Select a row to see the full details below the table. Click a column heading to sort.
+4. **Accept Discovered MACs** records the MACs of devices that didn't have one yet
+   (mismatched MACs are never overwritten), then **Save** (Ctrl+S).
+5. **Export Report** saves the results as CSV (opens in Excel) or JSON.
+
 ## Describing the expected interconnect
 
-Create a JSON file with a top-level object containing a `connections` list, with one
+You can create and edit the file in the GUI, or by hand:
+
+It is a JSON file with a top-level object containing a `connections` list, with one
 entry per patch-panel port. See
 [`examples/expected_interconnect.json`](examples/expected_interconnect.json).
 
@@ -75,7 +105,7 @@ JSON syntax errors are reported with line/column, and bad IPs/MACs, unknown
 statuses, unused ports with IPs, and duplicate IPs, MACs, panel ports or switch
 ports are all reported together, identified as `connection #N (panel:port)`.
 
-## Running
+## Command line
 
 ```sh
 python interconnect_test.py examples/expected_interconnect.json
@@ -126,14 +156,18 @@ Check the baseline file is right, then use it as your expected interconnect from
 python -m unittest discover -s tests -t .
 ```
 
+The GUI tests are skipped automatically when Tkinter or a display isn't available.
+
 ## Layout
 
 ```text
-interconnect_test.py      entry point
+interconnect_gui.py(w)    desktop GUI entry point (.pyw = no console on Windows)
+interconnect_test.py      command-line entry point
 netcheck/inventory.py     JSON loading and validation
 netcheck/ping.py          cross-platform ping
 netcheck/mac.py           MAC normalisation and ARP/neighbour-table lookup
 netcheck/checker.py       runs the checks and grades each connection
 netcheck/report.py        console table, CSV/JSON report, baseline writer
 netcheck/cli.py           command-line options
+netcheck/gui.py           Tkinter desktop GUI
 ```

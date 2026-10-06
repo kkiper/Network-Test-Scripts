@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -114,10 +115,18 @@ def check_all(
     ping_fn: Callable[..., PingResult] = ping,
     mac_fn: Callable[[str], Optional[str]] = lookup_mac,
     progress: Optional[Callable[[CheckResult], None]] = None,
+    stop_event: Optional[threading.Event] = None,
 ) -> list[CheckResult]:
-    """Check every connection in parallel; results keep the inventory order."""
+    """Check every connection in parallel; results keep the inventory order.
+
+    Setting ``stop_event`` makes connections that haven't started yet return
+    a SKIP "Cancelled" result; checks already in progress finish normally.
+    """
     def run(conn: Connection) -> CheckResult:
-        res = check_connection(conn, count, timeout_s, ping_fn, mac_fn)
+        if stop_event is not None and stop_event.is_set():
+            res = CheckResult(conn, SKIP, None, None, MAC_NA, "Cancelled")
+        else:
+            res = check_connection(conn, count, timeout_s, ping_fn, mac_fn)
         if progress:
             progress(res)
         return res

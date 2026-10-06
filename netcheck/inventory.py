@@ -72,14 +72,18 @@ def load_inventory(path: str) -> list[Connection]:
 
     All problems found are reported together so the file can be fixed in one pass.
     """
-    data = read_json(path)
+    return parse_inventory(read_json(path), path)
+
+
+def parse_inventory(data: Any, source: str = "inventory") -> list[Connection]:
+    """Validate an already-loaded inventory document (see load_inventory)."""
     if not isinstance(data, dict) or "connections" not in data:
-        raise InventoryError(f'{path}: top level must be an object with a "connections" list')
+        raise InventoryError(f'{source}: top level must be an object with a "connections" list')
     entries = data["connections"]
     if not isinstance(entries, list):
-        raise InventoryError(f'{path}: "connections" must be a list')
+        raise InventoryError(f'{source}: "connections" must be a list')
     if not entries:
-        raise InventoryError(f"{path}: no connections defined")
+        raise InventoryError(f"{source}: no connections defined")
 
     errors: list[str] = []
     connections: list[Connection] = []
@@ -91,8 +95,13 @@ def load_inventory(path: str) -> list[Connection]:
 
     errors.extend(_check_duplicates(connections))
     if errors:
-        raise InventoryError(f"{path}: invalid inventory:\n  " + "\n  ".join(errors))
+        raise InventoryError(f"{source}: invalid inventory:\n  " + "\n  ".join(errors))
     return connections
+
+
+def validate_entry(entry: Any, index: int = 1) -> list[str]:
+    """Return the problems with a single connection entry (ignores duplicates)."""
+    return _parse_entry(entry, index)[1]
 
 
 def _text(entry: dict, key: str, errors: list[str]) -> str:

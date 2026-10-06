@@ -111,6 +111,27 @@ def write_report(results: list[CheckResult], path: str, inventory_path: str) -> 
         write_csv(results, path)
 
 
+def fill_discovered_macs(data: dict, results: list[CheckResult]) -> int:
+    """Set ``expected_mac`` on inventory entries whose MAC was missing but discovered.
+
+    ``data`` is the raw inventory document; it is modified in place. MACs that
+    don't match are left alone. Returns the number of MACs filled in.
+    """
+    entries = data["connections"]
+    filled = 0
+    for res in results:
+        if res.mac_check == MAC_DISCOVERED and res.discovered_mac:
+            entries[res.connection.index - 1]["expected_mac"] = res.discovered_mac
+            filled += 1
+    return filled
+
+
+def save_json(data: dict, path: str) -> None:
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+        fh.write("\n")
+
+
 def write_baseline(results: list[CheckResult], inventory_path: str, path: str) -> int:
     """Write a copy of the inventory JSON with blank expected MACs filled from discovery.
 
@@ -119,13 +140,6 @@ def write_baseline(results: list[CheckResult], inventory_path: str, path: str) -
     expected interconnect.
     """
     data = read_json(inventory_path)
-    entries = data["connections"]
-    filled = 0
-    for res in results:
-        if res.mac_check == MAC_DISCOVERED and res.discovered_mac:
-            entries[res.connection.index - 1]["expected_mac"] = res.discovered_mac
-            filled += 1
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2)
-        fh.write("\n")
+    filled = fill_discovered_macs(data, results)
+    save_json(data, path)
     return filled
