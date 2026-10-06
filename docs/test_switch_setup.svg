@@ -1,0 +1,178 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 760" width="1240" height="760" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <title>Test switch connection diagram for verifying unused patch panel runs</title>
+  <defs>
+    <marker id="arrow-cdp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2e7d32"/>
+    </marker>
+    <marker id="arrow-ssh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1f5fa8"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1240" height="760" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="620" y="34" text-anchor="middle" font-size="22" font-weight="700" fill="#1a1a1a">Verifying unused runs with a test switch</text>
+  <text x="620" y="58" text-anchor="middle" font-size="14" fill="#555">One test port per unused run. The production switch reports, over CDP, which of its ports the run lands on.</text>
+
+  <!-- Zones -->
+  <rect x="20" y="80" width="450" height="490" rx="10" fill="#f4f8fd" stroke="#9db7d8" stroke-dasharray="6 4"/>
+  <text x="36" y="102" font-size="13" font-weight="700" fill="#1f5fa8">TEST KIT (brought in for the test)</text>
+
+  <rect x="500" y="80" width="160" height="490" rx="10" fill="#fafafa" stroke="#bbb" stroke-dasharray="6 4"/>
+  <text x="580" y="102" text-anchor="middle" font-size="13" font-weight="700" fill="#555">FAR END</text>
+
+  <rect x="660" y="80" width="140" height="490" fill="none"/>
+  <text x="730" y="102" text-anchor="middle" font-size="13" font-weight="700" fill="#b85c00">BUILDING CABLING</text>
+
+  <rect x="800" y="80" width="420" height="490" rx="10" fill="#fbf7f2" stroke="#d7b98f" stroke-dasharray="6 4"/>
+  <text x="816" y="102" font-size="13" font-weight="700" fill="#8a5a1c">PRODUCTION RACK (not reconfigured)</text>
+
+  <!-- Laptop -->
+  <rect x="40" y="182" width="140" height="86" rx="8" fill="#ffffff" stroke="#1f5fa8" stroke-width="2"/>
+  <text x="110" y="208" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a1a">Laptop</text>
+  <text x="110" y="228" text-anchor="middle" font-size="12" fill="#333">Test tool (GUI / CLI)</text>
+  <text x="110" y="248" text-anchor="middle" font-size="12" fill="#333">192.168.100.10/24</text>
+
+  <!-- Management link -->
+  <line x1="180" y1="225" x2="240" y2="225" stroke="#1f5fa8" stroke-width="3"/>
+  <text x="110" y="292" text-anchor="middle" font-size="12" fill="#1f5fa8">SSH to the test switch only</text>
+  <text x="110" y="308" text-anchor="middle" font-size="12" fill="#1f5fa8">(read CDP, clear tables, TDR)</text>
+
+  <!-- Test switch -->
+  <rect x="240" y="130" width="200" height="390" rx="8" fill="#ffffff" stroke="#1f5fa8" stroke-width="2"/>
+  <rect x="240" y="130" width="200" height="66" rx="8" fill="#1f5fa8"/>
+  <rect x="240" y="180" width="200" height="16" fill="#1f5fa8"/>
+  <text x="340" y="154" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">TEST SWITCH</text>
+  <text x="340" y="174" text-anchor="middle" font-size="12" fill="#e6efff">Catalyst 9200 · NETTEST</text>
+  <text x="340" y="190" text-anchor="middle" font-size="12" fill="#e6efff">mgmt 192.168.100.2 (VLAN 99)</text>
+
+  <!-- Mgmt port -->
+  <rect x="234" y="218" width="12" height="14" fill="#1f5fa8"/>
+  <text x="256" y="222" font-size="12" fill="#1f5fa8" font-weight="700">Gi1/0/24</text>
+  <text x="256" y="236" font-size="11" fill="#555">management port,</text>
+  <text x="256" y="249" font-size="11" fill="#555">never patched to a run</text>
+
+  <!-- Test ports -->
+  <g font-size="12">
+    <rect x="434" y="263" width="12" height="14" fill="#444"/>
+    <text x="424" y="268" text-anchor="end" font-weight="700" fill="#1a1a1a">Gi1/0/1</text>
+    <text x="424" y="283" text-anchor="end" fill="#666">routed test port</text>
+
+    <rect x="434" y="333" width="12" height="14" fill="#444"/>
+    <text x="424" y="338" text-anchor="end" font-weight="700" fill="#1a1a1a">Gi1/0/2</text>
+    <text x="424" y="353" text-anchor="end" fill="#666">routed test port</text>
+
+    <rect x="434" y="403" width="12" height="14" fill="#444"/>
+    <text x="424" y="408" text-anchor="end" font-weight="700" fill="#1a1a1a">Gi1/0/3</text>
+    <text x="424" y="423" text-anchor="end" fill="#666">routed test port</text>
+
+    <text x="424" y="470" text-anchor="end" font-weight="700" fill="#1a1a1a">⋮  Gi1/0/4 – 23</text>
+    <text x="424" y="486" text-anchor="end" fill="#666">more runs in the same batch</text>
+  </g>
+
+  <!-- Test patch cords: test switch -> far-end panel -->
+  <g stroke="#555" stroke-width="3" fill="none">
+    <line x1="446" y1="270" x2="550" y2="270"/>
+    <line x1="446" y1="340" x2="550" y2="340"/>
+    <line x1="446" y1="410" x2="550" y2="410"/>
+  </g>
+  <text x="498" y="258" text-anchor="middle" font-size="11" fill="#555">test cord</text>
+
+  <!-- Far-end panel PP-Z -->
+  <rect x="550" y="220" width="60" height="240" rx="4" fill="#eeeeee" stroke="#777" stroke-width="2"/>
+  <text x="580" y="200" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a1a">PP-Z</text>
+  <text x="580" y="214" text-anchor="middle" font-size="11" fill="#555">far-end panel</text>
+  <g font-size="12" font-weight="700" fill="#1a1a1a" text-anchor="middle">
+    <rect x="566" y="261" width="28" height="18" rx="3" fill="#fff" stroke="#777"/><text x="580" y="275">5</text>
+    <rect x="566" y="331" width="28" height="18" rx="3" fill="#fff" stroke="#777"/><text x="580" y="345">6</text>
+    <rect x="566" y="401" width="28" height="18" rx="3" fill="#fff" stroke="#777"/><text x="580" y="415">7</text>
+  </g>
+
+  <!-- Runs under test -->
+  <g stroke="#e07b00" stroke-width="6" fill="none">
+    <line x1="610" y1="270" x2="840" y2="270"/>
+    <line x1="610" y1="340" x2="840" y2="340"/>
+    <line x1="610" y1="410" x2="840" y2="410"/>
+  </g>
+  <g stroke="#ffffff" stroke-width="2" fill="none">
+    <line x1="610" y1="270" x2="840" y2="270"/>
+    <line x1="610" y1="340" x2="840" y2="340"/>
+    <line x1="610" y1="410" x2="840" y2="410"/>
+  </g>
+  <text x="725" y="258" text-anchor="middle" font-size="11" fill="#b85c00"><tspan font-weight="700">run under test:</tspan> PP-Z:5 ═ PP-A:5</text>
+  <text x="725" y="328" text-anchor="middle" font-size="11" fill="#b85c00">PP-Z:6 ═ PP-A:6</text>
+  <text x="725" y="398" text-anchor="middle" font-size="11" fill="#b85c00">PP-Z:7 ═ PP-A:7</text>
+  <text x="725" y="448" text-anchor="middle" font-size="11" fill="#666">permanent link</text>
+  <text x="725" y="463" text-anchor="middle" font-size="11" fill="#666">(already installed)</text>
+
+  <!-- Production panel PP-A -->
+  <rect x="840" y="220" width="60" height="240" rx="4" fill="#eeeeee" stroke="#777" stroke-width="2"/>
+  <text x="870" y="200" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a1a">PP-A</text>
+  <text x="870" y="214" text-anchor="middle" font-size="11" fill="#555">production panel</text>
+  <g font-size="12" font-weight="700" fill="#1a1a1a" text-anchor="middle">
+    <rect x="856" y="261" width="28" height="18" rx="3" fill="#fff" stroke="#777"/><text x="870" y="275">5</text>
+    <rect x="856" y="331" width="28" height="18" rx="3" fill="#fff" stroke="#777"/><text x="870" y="345">6</text>
+    <rect x="856" y="401" width="28" height="18" rx="3" fill="#fff" stroke="#777"/><text x="870" y="415">7</text>
+  </g>
+
+  <!-- Existing patch cords: PP-A -> production switch -->
+  <g stroke="#555" stroke-width="3" fill="none">
+    <line x1="900" y1="270" x2="1004" y2="270"/>
+    <line x1="900" y1="340" x2="1004" y2="340"/>
+    <line x1="900" y1="410" x2="1004" y2="410"/>
+  </g>
+  <text x="952" y="258" text-anchor="middle" font-size="11" fill="#555">existing cord</text>
+
+  <!-- Production switch -->
+  <rect x="1004" y="130" width="196" height="390" rx="8" fill="#ffffff" stroke="#8a5a1c" stroke-width="2"/>
+  <rect x="1004" y="130" width="196" height="66" rx="8" fill="#8a5a1c"/>
+  <rect x="1004" y="180" width="196" height="16" fill="#8a5a1c"/>
+  <text x="1102" y="154" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">PRODUCTION SWITCH</text>
+  <text x="1102" y="174" text-anchor="middle" font-size="12" fill="#fbeedd">Cisco ESS 3300 · SW-CORE-01</text>
+  <text x="1102" y="190" text-anchor="middle" font-size="12" fill="#fbeedd">CDP on (factory default)</text>
+
+  <g font-size="12">
+    <rect x="998" y="263" width="12" height="14" fill="#444"/>
+    <text x="1020" y="268" font-weight="700" fill="#1a1a1a">Gi1/0/5</text>
+    <text x="1020" y="283" fill="#666">unused port</text>
+
+    <rect x="998" y="333" width="12" height="14" fill="#444"/>
+    <text x="1020" y="338" font-weight="700" fill="#1a1a1a">Gi1/0/6</text>
+    <text x="1020" y="353" fill="#666">unused port</text>
+
+    <rect x="998" y="403" width="12" height="14" fill="#444"/>
+    <text x="1020" y="408" font-weight="700" fill="#1a1a1a">Gi1/0/7</text>
+    <text x="1020" y="423" fill="#666">unused port</text>
+
+    <text x="1020" y="470" fill="#666">No login, no config</text>
+    <text x="1020" y="486" fill="#666">changes on this switch</text>
+  </g>
+
+  <!-- CDP advertisement path -->
+  <path d="M1102,520 L1102,548 L340,548 L340,526" fill="none" stroke="#2e7d32" stroke-width="2.5" stroke-dasharray="8 5" marker-end="url(#arrow-cdp)"/>
+  <rect x="482" y="533" width="476" height="30" rx="6" fill="#ffffff" stroke="#2e7d32"/>
+  <text x="720" y="553" text-anchor="middle" font-size="13" fill="#2e7d32"><tspan font-weight="700">CDP:</tspan> “Device ID SW-CORE-01, Port ID Gi1/0/5” → heard on Gi1/0/1</text>
+
+  <!-- Legend -->
+  <g font-size="12" fill="#333">
+    <text x="20" y="602" font-size="13" font-weight="700" fill="#1a1a1a">Legend</text>
+    <line x1="20" y1="622" x2="60" y2="622" stroke="#1f5fa8" stroke-width="3"/>
+    <text x="68" y="626">Management (SSH)</text>
+    <line x1="200" y1="622" x2="240" y2="622" stroke="#555" stroke-width="3"/>
+    <text x="248" y="626">Patch cord</text>
+    <line x1="350" y1="622" x2="390" y2="622" stroke="#e07b00" stroke-width="6"/>
+    <line x1="350" y1="622" x2="390" y2="622" stroke="#fff" stroke-width="2"/>
+    <text x="398" y="626">Run under test</text>
+    <line x1="530" y1="622" x2="570" y2="622" stroke="#2e7d32" stroke-width="2.5" stroke-dasharray="8 5"/>
+    <text x="578" y="626">CDP advertisement (production → test switch)</text>
+  </g>
+
+  <!-- Notes -->
+  <g font-size="13" fill="#333">
+    <text x="20" y="662"><tspan font-weight="700">PASS</tspan> when the switch and port heard over CDP match the inventory row (e.g. PP-A:5 → SW-CORE-01 Gi1/0/5). <tspan font-weight="700">FAIL</tspan> if a different port is heard, or there is no link.</text>
+    <text x="20" y="686"><tspan font-weight="700">Routed test ports</tspan> (<tspan font-family="Consolas, monospace">no switchport</tspan>) never bridge two production ports together and send no BPDUs, so a full batch can be connected safely.</text>
+    <text x="20" y="710"><tspan font-weight="700">Batches:</tspan> connect up to 23 runs (Gi1/0/1–23), press Verify Batch, then move the test cords to the next runs. The GUI lists exactly which cord goes where.</text>
+    <text x="20" y="734">Configuration for the test switch: <tspan font-family="Consolas, monospace">docs/test_switch_c9200.cfg</tspan></text>
+  </g>
+</svg>

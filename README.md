@@ -69,9 +69,9 @@ On Windows you can double-click **`interconnect_gui.pyw`** to start it without a
 
 An unused run has no device to ping, so a spare Cisco switch stands in for one:
 
-```text
- laptop ── Gi1/0/24 (mgmt) TEST SWITCH Gi1/0/1 ──► far-end panel PP-Z:5 ══ run ══ PP-A:5 ──► SW-CORE-01 Gi1/0/5
-```
+![How the test switch connects to the production switch](docs/test_switch_setup.svg)
+
+(A PNG copy for printing: [`docs/test_switch_setup.png`](docs/test_switch_setup.png).)
 
 When the link comes up, the production switch (e.g. an ESS 3300) advertises itself over
 CDP, which Cisco switches send by default. The test switch then reports
