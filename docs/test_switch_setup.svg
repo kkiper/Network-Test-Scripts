@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 760" width="1240" height="760" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 985" width="1240" height="985" font-family="Segoe UI, Helvetica, Arial, sans-serif">
   <title>Test switch connection diagram for verifying unused patch panel runs</title>
   <defs>
     <marker id="arrow-cdp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
@@ -9,7 +9,7 @@
     </marker>
   </defs>
 
-  <rect x="0" y="0" width="1240" height="760" fill="#ffffff"/>
+  <rect x="0" y="0" width="1240" height="985" fill="#ffffff"/>
 
   <!-- Title -->
   <text x="620" y="34" text-anchor="middle" font-size="22" font-weight="700" fill="#1a1a1a">Verifying unused runs with a test switch</text>
@@ -57,15 +57,15 @@
   <g font-size="12">
     <rect x="434" y="263" width="12" height="14" fill="#444"/>
     <text x="424" y="268" text-anchor="end" font-weight="700" fill="#1a1a1a">Gi1/0/1</text>
-    <text x="424" y="283" text-anchor="end" fill="#666">routed test port</text>
+    <text x="424" y="283" text-anchor="end" fill="#666">routed · no IP address</text>
 
     <rect x="434" y="333" width="12" height="14" fill="#444"/>
     <text x="424" y="338" text-anchor="end" font-weight="700" fill="#1a1a1a">Gi1/0/2</text>
-    <text x="424" y="353" text-anchor="end" fill="#666">routed test port</text>
+    <text x="424" y="353" text-anchor="end" fill="#666">routed · no IP address</text>
 
     <rect x="434" y="403" width="12" height="14" fill="#444"/>
     <text x="424" y="408" text-anchor="end" font-weight="700" fill="#1a1a1a">Gi1/0/3</text>
-    <text x="424" y="423" text-anchor="end" fill="#666">routed test port</text>
+    <text x="424" y="423" text-anchor="end" fill="#666">routed · no IP address</text>
 
     <text x="424" y="470" text-anchor="end" font-weight="700" fill="#1a1a1a">⋮  Gi1/0/4 – 23</text>
     <text x="424" y="486" text-anchor="end" fill="#666">more runs in the same batch</text>
@@ -130,7 +130,7 @@
   <rect x="1004" y="180" width="196" height="16" fill="#8a5a1c"/>
   <text x="1102" y="154" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">PRODUCTION SWITCH</text>
   <text x="1102" y="174" text-anchor="middle" font-size="12" fill="#fbeedd">Cisco ESS 3300 · SW-CORE-01</text>
-  <text x="1102" y="190" text-anchor="middle" font-size="12" fill="#fbeedd">CDP on (factory default)</text>
+  <text x="1102" y="190" text-anchor="middle" font-size="12" fill="#fbeedd">mgmt 10.10.10.2 · CDP on</text>
 
   <g font-size="12">
     <rect x="998" y="263" width="12" height="14" fill="#444"/>
@@ -151,8 +151,8 @@
 
   <!-- CDP advertisement path -->
   <path d="M1102,520 L1102,548 L340,548 L340,526" fill="none" stroke="#2e7d32" stroke-width="2.5" stroke-dasharray="8 5" marker-end="url(#arrow-cdp)"/>
-  <rect x="482" y="533" width="476" height="30" rx="6" fill="#ffffff" stroke="#2e7d32"/>
-  <text x="720" y="553" text-anchor="middle" font-size="13" fill="#2e7d32"><tspan font-weight="700">CDP:</tspan> “Device ID SW-CORE-01, Port ID Gi1/0/5” → heard on Gi1/0/1</text>
+  <rect x="430" y="533" width="580" height="30" rx="6" fill="#ffffff" stroke="#2e7d32"/>
+  <text x="720" y="553" text-anchor="middle" font-size="13" fill="#2e7d32"><tspan font-weight="700">CDP:</tspan> “Device ID SW-CORE-01, Port ID Gi1/0/5, IP 10.10.10.2” → heard on Gi1/0/1</text>
 
   <!-- Legend -->
   <g font-size="12" fill="#333">
@@ -168,11 +168,50 @@
     <text x="578" y="626">CDP advertisement (production → test switch)</text>
   </g>
 
+  <!-- IP addressing -->
+  <g font-size="12" fill="#333">
+    <text x="20" y="668" font-size="13" font-weight="700" fill="#1a1a1a">IP addressing (sample)</text>
+    <rect x="20" y="678" width="1200" height="26" fill="#e9eef5"/>
+    <text x="30" y="696" font-weight="700" fill="#1a1a1a">Device / interface</text>
+    <text x="330" y="696" font-weight="700" fill="#1a1a1a">IP address</text>
+    <text x="600" y="696" font-weight="700" fill="#1a1a1a">Purpose</text>
+
+    <rect x="20" y="704" width="1200" height="26" fill="#ffffff"/>
+    <text x="30" y="722">Laptop network port</text>
+    <text x="330" y="722" font-family="Consolas, monospace" fill="#1f5fa8">192.168.100.10 /24</text>
+    <text x="600" y="722">Runs the test tool. No default gateway needed: it only talks to the test switch.</text>
+
+    <rect x="20" y="730" width="1200" height="26" fill="#f6f8fb"/>
+    <text x="30" y="748">Test switch · Vlan99 (via Gi1/0/24)</text>
+    <text x="330" y="748" font-family="Consolas, monospace" fill="#1f5fa8">192.168.100.2 /24</text>
+    <text x="600" y="748">SSH management of the test switch (the tool's only connection).</text>
+
+    <rect x="20" y="756" width="1200" height="26" fill="#ffffff"/>
+    <text x="30" y="774">Test switch · Gi1/0/1 – Gi1/0/23</text>
+    <text x="330" y="774" font-family="Consolas, monospace">none</text>
+    <text x="400" y="774" fill="#666">(routed, no ip address)</text>
+    <text x="600" y="774">CDP/LLDP work at Layer 2, so no IP is needed. With no IP, nothing can be routed into production.</text>
+
+    <rect x="20" y="782" width="1200" height="26" fill="#f6f8fb"/>
+    <text x="30" y="800">Runs PP-Z ↔ PP-A (patch panels, cords)</text>
+    <text x="330" y="800" font-family="Consolas, monospace">none</text>
+    <text x="600" y="800">Passive cabling: carries the link, has no address.</text>
+
+    <rect x="20" y="808" width="1200" height="26" fill="#ffffff"/>
+    <text x="30" y="826">Production switch SW-CORE-01</text>
+    <text x="330" y="826" font-family="Consolas, monospace" fill="#8a5a1c">10.10.10.2</text>
+    <text x="420" y="826" fill="#666">(example)</text>
+    <text x="600" y="826">Not contacted or configured. Its address simply arrives inside its CDP announcement.</text>
+
+    <rect x="20" y="678" width="1200" height="156" fill="none" stroke="#c9d3e0"/>
+    <text x="20" y="854" fill="#555">Pick a management subnet that isn't used anywhere on the production network (192.168.100.0/24 here), so the test kit can never clash with it.</text>
+  </g>
+
   <!-- Notes -->
   <g font-size="13" fill="#333">
-    <text x="20" y="662"><tspan font-weight="700">PASS</tspan> when the switch and port heard over CDP match the inventory row (e.g. PP-A:5 → SW-CORE-01 Gi1/0/5). <tspan font-weight="700">FAIL</tspan> if a different port is heard, or there is no link.</text>
-    <text x="20" y="686"><tspan font-weight="700">Routed test ports</tspan> (<tspan font-family="Consolas, monospace">no switchport</tspan>) never bridge two production ports together and send no BPDUs, so a full batch can be connected safely.</text>
-    <text x="20" y="710"><tspan font-weight="700">Batches:</tspan> connect up to 23 runs (Gi1/0/1–23), press Verify Batch, then move the test cords to the next runs. The GUI lists exactly which cord goes where.</text>
-    <text x="20" y="734">Configuration for the test switch: <tspan font-family="Consolas, monospace">docs/test_switch_c9200.cfg</tspan></text>
+    <text x="20" y="890"><tspan font-weight="700">PASS</tspan> when the switch and port heard over CDP match the inventory row (e.g. PP-A:5 → SW-CORE-01 Gi1/0/5). <tspan font-weight="700">FAIL</tspan> if a different port is heard, or there is no link.</text>
+    <text x="20" y="914"><tspan font-weight="700">Routed test ports</tspan> (<tspan font-family="Consolas, monospace">no switchport</tspan>) never bridge two production ports together and send no BPDUs, so a full batch can be connected safely.</text>
+    <text x="20" y="938"><tspan font-weight="700">Batches:</tspan> connect up to 23 runs (Gi1/0/1–23), press Verify Batch, then move the test cords to the next runs. The GUI lists exactly which cord goes where.</text>
+    <text x="20" y="962">Configuration for the test switch: <tspan font-family="Consolas, monospace">docs/test_switch_c9200.cfg</tspan></text>
   </g>
 </svg>
