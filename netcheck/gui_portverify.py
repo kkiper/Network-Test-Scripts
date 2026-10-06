@@ -114,8 +114,18 @@ class PortVerifyWindow(tk.Toplevel):
                         variable=self.clear_var).grid(row=1, column=6, columnspan=2, sticky="w")
         self.connect_button = ttk.Button(frame, text="Connect", command=self.connect)
         self.connect_button.grid(row=0, column=8, rowspan=3, padx=(6, 0), sticky="ns")
+        # The fiber test only sees one direction: the test switch can read its own
+        # SFP+ modules, but not the production switch's (no login there).
+        self.fiber_note = ttk.Label(frame, foreground="#8a5a1c", justify="left",
+                                    wraplength=1000, text=(
+            "Note: the fiber test can only measure what arrives FROM the ESS 3300 (its transmit "
+            "light, as received by the test switch, and receive errors). The other direction, "
+            "test switch to ESS 3300, is confirmed only by the link coming up at the expected "
+            "speed: the ESS 3300's own receive level, errors and module readings can't be read "
+            "without logging into it."))
+        self.fiber_note.grid(row=3, column=0, columnspan=8, sticky="w", pady=(4, 0))
         self.conn_status = ttk.Label(frame, text="Not connected", foreground="#555555")
-        self.conn_status.grid(row=3, column=0, columnspan=9, sticky="w", pady=(4, 0))
+        self.conn_status.grid(row=4, column=0, columnspan=9, sticky="w", pady=(4, 0))
 
     def _build_batch_bar(self) -> None:
         bar = ttk.Frame(self, padding=(8, 0))

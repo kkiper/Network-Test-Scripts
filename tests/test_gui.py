@@ -181,6 +181,8 @@ class PortVerifyGuiTests(GuiTests):
             window.user_var.set("admin")
             window.ports_var.set("Gi1/0/1-2")
             self.assertEqual(window.fiber_var.get(), "Te1/1/1, Te1/1/2")  # from the inventory
+            self.assertIn("can only measure what arrives FROM the ESS 3300",
+                          window.fiber_note.cget("text"))
             window.soak_var.set(0)
             window.replan()
             # Copper PP-A:5/6 and fiber channels 1/2 are verified in the same batch.
