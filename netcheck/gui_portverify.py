@@ -78,7 +78,7 @@ class PortVerifyWindow(tk.Toplevel):
         self.password_var = tk.StringVar()
         self.secret_var = tk.StringVar()
         self.ports_var = tk.StringVar(value=", ".join(short_interface(p) for p in s.ports)
-                                      or "Gi1/0/1-23")
+                                      or "Gi1/0/1-22")
         self.fiber_var = tk.StringVar(value=", ".join(short_interface(p) for p in s.fiber_ports))
         self.soak_var = tk.IntVar(value=int(s.fiber_soak))
         self.timeout_var = tk.IntVar(value=int(s.cdp_timeout))
@@ -171,7 +171,7 @@ class PortVerifyWindow(tk.Toplevel):
             timeout = int(self.timeout_var.get())
             soak = int(self.soak_var.get())
             if not ports and not fiber_ports:
-                raise ValueError("enter the test switch ports to use, e.g. Gi1/0/1-23 "
+                raise ValueError("enter the test switch ports to use, e.g. Gi1/0/1-22 "
                                  "(and Te1/1/1-2 for fiber runs)")
             if timeout < 10:
                 raise ValueError("CDP wait must be at least 10 seconds")
@@ -206,7 +206,7 @@ class PortVerifyWindow(tk.Toplevel):
         connections = self.app.filtered(connections)
         if settings is None:
             self.batches, self.unverifiable = [], []
-            self.instructions.configure(text="Enter valid test ports, e.g. Gi1/0/1-23.")
+            self.instructions.configure(text="Enter valid test ports, e.g. Gi1/0/1-22.")
         else:
             self.batches, self.unverifiable = plan_batches(connections, settings.ports,
                                                            settings.fiber_ports)

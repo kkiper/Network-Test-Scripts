@@ -40,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("inventory", help="JSON file describing the expected interconnect")
     parser.add_argument("--host", help="test switch management IP / hostname")
     parser.add_argument("--username", help="test switch SSH username")
-    parser.add_argument("--ports", help="copper test ports to use, e.g. 'Gi1/0/1-23'")
+    parser.add_argument("--ports", help="copper test ports to use, e.g. 'Gi1/0/1-22'")
     parser.add_argument("--fiber-ports",
                         help="SFP+ test ports for fiber runs, e.g. 'Te1/1/1-2'")
     parser.add_argument("--fiber-soak", type=float,
@@ -113,7 +113,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         wanted = {p.lower() for p in args.patch_panel}
         connections = [c for c in connections if c.patch_panel.lower() in wanted]
     if not settings.ports and not settings.fiber_ports:
-        print("error: no test switch ports given (use --ports, e.g. 'Gi1/0/1-23', and/or "
+        print("error: no test switch ports given (use --ports, e.g. 'Gi1/0/1-22', and/or "
               "--fiber-ports, e.g. 'Te1/1/1-2')", file=sys.stderr)
         return EXIT_BAD_INPUT
 

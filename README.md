@@ -132,13 +132,39 @@ Notes:
   (or pass `--oui`) to see manufacturer names. Without it, only randomised / private MACs are
   labelled.
 
-## Verifying unused runs with a test switch
+## Test setup
 
-An unused run has no device to ping, so a spare Cisco switch stands in for one:
-
-![How the test switch connects to the production switch](docs/test_switch_setup.svg)
+![Test setup: laptop, test switch, production switch and daisy-chained switch](docs/test_switch_setup.svg)
 
 (A PNG copy for printing: [`docs/test_switch_setup.png`](docs/test_switch_setup.png).)
+
+The laptop plugs into the Catalyst test switch, which sits between the laptop and the
+production switch (SW-CORE-01). Any daisy-chained switch (SW-EDGE-02) hangs off SW-CORE-01.
+
+- **Laptop → test switch → SW-CORE-01 → SW-EDGE-02.** On the test switch, the laptop port
+  (Gi1/0/24) and the **production link** (Gi1/0/23) are switched together. Gi1/0/23 runs
+  through a patch panel to an existing SW-CORE-01 access port in the devices' VLAN. The laptop
+  is therefore on the devices' VLAN, so **Ping Test** and **Discover** reach devices on
+  SW-CORE-01 *and* on SW-EDGE-02 (through SW-CORE-01's uplink), MAC addresses included. They
+  can't tell which switch a device is on.
+- **Addresses:** the laptop and the test switch's management each use a spare address in the
+  devices' subnet (192.168.1.240 and 192.168.1.250 in the examples). Check with the network
+  owner that they're free; Discover shows which addresses answer.
+- **Only one production link.** Gi1/0/23 filters spanning-tree BPDUs so SW-CORE-01's BPDU guard
+  isn't tripped. That's safe with a single link, but a second link between the test switch
+  and production would create a loop nothing detects.
+- **Test ports** (Gi1/0/1-22, and Te1/1/1-2 for fiber) stay routed and isolated: they verify
+  unused runs (below) and never connect the laptop or each other to anything.
+- **Production link in the inventory.** Add a `connected` row for it with the test switch's
+  address, like `PP-A:23` in the example. Ping Test and Discover then recognise the test
+  switch instead of reporting it as unknown.
+- Nothing is configured on SW-CORE-01 or SW-EDGE-02. The only configuration goes on the test
+  switch: [`docs/test_switch_c9200.cfg`](docs/test_switch_c9200.cfg).
+
+## Verifying unused runs with a test switch
+
+An unused run has no device to ping, so the test switch stands in for one: a test port is
+patched to the far end of the run (see the diagram above).
 
 When the link comes up, the production switch (e.g. an ESS 3300) advertises itself over
 CDP, which Cisco switches send by default. The test switch then reports
@@ -155,7 +181,7 @@ production ports isn't triggered. The tool refuses to use test ports that aren't
 ![Verify unused ports](docs/port_verify.png)
 
 1. Enter the test switch's management IP, username and password (the password is never
-   saved), and the test ports to use, e.g. `Gi1/0/1-23`. Press **Connect**. The tool checks
+   saved), and the test ports to use, e.g. `Gi1/0/1-22`. Press **Connect**. The tool checks
    that CDP is on and that the test ports are routed and enabled.
 2. The unused runs are split into batches, one test port per run. **Export Cabling Plan**
    gives a printable list of the batches.
@@ -170,7 +196,7 @@ production ports isn't triggered. The tool refuses to use test ports that aren't
 ```sh
 pip install -r requirements.txt
 # my_network.json = your inventory file (see "Describing the expected interconnect")
-python port_verify.py my_network.json --host 192.168.100.2 --username admin --ports Gi1/0/1-23
+python port_verify.py my_network.json --host 192.168.1.250 --username admin --ports Gi1/0/1-22
 ```
 
 Options: `--fiber-ports Te1/1/1-2` and `--fiber-soak SECONDS` for fiber runs, `--cable-test` (TDR), `--timeout SECONDS`, `--switch NAME` / `--patch-panel NAME`
@@ -272,9 +298,9 @@ entry per patch-panel port. See
     }
   ],
   "test_switch": {
-    "host": "192.168.100.2",
+    "host": "192.168.1.250",
     "username": "admin",
-    "ports": "Gi1/0/1-23"
+    "ports": "Gi1/0/1-22"
   }
 }
 ```

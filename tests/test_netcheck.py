@@ -165,7 +165,17 @@ class InventoryTests(unittest.TestCase):
                                "expected_interconnect.json")
         conns = load_inventory(shipped)  # raises if the example stops validating
         self.assertTrue(any(c.status == "unused" for c in conns))
-        self.assertTrue(any(c.status == "connected" and c.ip for c in conns))
+        # The setup in docs/test_switch_setup.png: the test switch's production link,
+        # and a device on the daisy-chained switch reached through SW-CORE-01.
+        link = next(c for c in conns if c.switch_port == "Gi1/0/23")
+        self.assertEqual((link.switch, link.ip, link.status),
+                         ("SW-CORE-01", "192.168.1.250", "connected"))
+        camera = next(c for c in conns if c.switch == "SW-EDGE-02")
+        self.assertEqual((camera.device, camera.status), ("Camera-05", "connected"))
+        with open(shipped) as fh:
+            test_switch = json.load(fh)["test_switch"]
+        self.assertEqual((test_switch["host"], test_switch["ports"]),
+                         ("192.168.1.250", "Gi1/0/1-22"))
 
     def test_missing_file_explains_what_to_do(self):
         with self.assertRaises(InventoryError) as ctx:
