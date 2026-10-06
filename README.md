@@ -12,6 +12,13 @@ Everything is available from the desktop GUI (`interconnect_gui.py`) or the comm
 - Compare the discovered MAC against the expected MAC.
 - Capture a MAC "baseline" for devices whose MAC isn't recorded yet.
 
+**Devices that aren't in the inventory** (`discover.py`):
+
+- Ping every address in the chosen subnet(s) and read this computer's ARP table.
+- List devices that answer but aren't in the inventory, devices that moved to a new IP, MAC
+  conflicts, and inventory devices that didn't answer. Unknown devices can be added to the
+  inventory.
+
 **Unused runs** (`port_verify.py`), using a spare Cisco switch as a test probe:
 
 - Patch test-switch ports to the far ends of unused runs, a batch at a time.
@@ -69,6 +76,58 @@ On Windows you can double-click **`interconnect_gui.pyw`** to start it without a
    (mismatched MACs are never overwritten), then **Save** (Ctrl+S).
 5. **Verify Unused Ports...** opens the test switch window (see below).
 6. **Export Report** saves all results, ping and port verification, as CSV (opens in Excel) or JSON.
+
+## Discovering devices that aren't in the inventory
+
+The ping test only checks the IPs you've listed. **Discover** sweeps whole subnets to find
+everything else that's there.
+
+![Discover devices](docs/discover.png)
+
+In the GUI, click **Discover Devices...**. The subnets are pre-filled from the inventory's IP
+addresses (their /24s) and can be edited, e.g. `192.168.1.0/24, 192.168.2.0/26`. Press
+**Start Discovery**. Each address gets one ping; a /24 takes about 5-10 seconds. Then this
+computer's ARP table is read, which also catches devices that block ping. Each device found is
+listed as:
+
+| Status | Meaning |
+|--------|---------|
+| UNKNOWN | Answers, but its IP isn't in the inventory. |
+| MOVED | A MAC from the inventory now answers at a different IP. |
+| MAC CONFLICT | An inventory IP is answered by a different MAC: another device is using that IP. |
+| NOT FOUND | An inventory IP in the swept subnets didn't answer ping or ARP. |
+| EXPECTED | In the inventory with the right MAC (hidden unless *Show only unexpected* is unticked). |
+
+Select UNKNOWN devices (Ctrl/Shift+click for several) and press **Add Selected to Inventory**.
+They're added as `connected` rows with their IP and MAC; double-click each one in the main
+window to fill in its patch panel and switch port, then Save. **Export...** saves the results as
+CSV or JSON.
+
+Command line:
+
+```sh
+python discover.py my_network.json                        # sweep the inventory's /24s
+python discover.py my_network.json --subnet 192.168.1.0/24 --subnet 10.0.5.0/26
+python discover.py --subnet 192.168.1.0/24 --all          # no inventory: list everything
+python discover.py my_network.json -o found.csv --add-unknown my_network.with_new.json
+```
+
+Options: `-t` ping timeout (default 0.5 s), `-w` parallel pings (default 64), `--max-hosts`
+(default 1024, a safety limit), `--all` (also list expected devices), `--oui FILE`. Exit code
+`1` means something unknown, moved or conflicting was found.
+
+Notes:
+
+- **Same subnet/VLAN only.** MAC addresses (and ARP-only devices) are only visible for the subnet
+  your computer is plugged into. Devices on other subnets may answer ping but show no MAC. Run
+  Discover from each VLAN.
+- **No physical port.** It finds devices but can't tell which switch port they're on.
+- **Get permission first.** A ping sweep is light, but some sites have rules about scanning.
+  The GUI asks you to confirm once per session.
+- **Vendor names (optional).** Download the IEEE registry
+  [`oui.csv`](https://standards-oui.ieee.org/oui/oui.csv) and save it as `netcheck/data/oui.csv`
+  (or pass `--oui`) to see manufacturer names. Without it, only randomised / private MACs are
+  labelled.
 
 ## Verifying unused runs with a test switch
 
@@ -307,6 +366,7 @@ The GUI tests are skipped automatically when Tkinter or a display isn't availabl
 interconnect_gui.py(w)    desktop GUI entry point (.pyw = no console on Windows)
 interconnect_test.py      command-line ping/MAC test
 port_verify.py            command-line unused-run verification with the test switch
+discover.py               command-line discovery of devices not in the inventory
 docs/test_switch_c9200.cfg  configuration for the Catalyst C9200L test switch
 netcheck/inventory.py     JSON loading and validation
 netcheck/ping.py          cross-platform ping
@@ -320,4 +380,7 @@ netcheck/portverify.py    batch planning, test-switch checks and grading of unus
 netcheck/cisco.py         parsers for Cisco CDP/LLDP/interface/TDR output
 netcheck/switch.py        SSH session to the test switch (Netmiko)
 netcheck/portcli.py       command-line options for port_verify.py
+netcheck/discover.py      subnet sweep, ARP table comparison and classification
+netcheck/discovercli.py   command-line options for discover.py
+netcheck/gui_discover.py  GUI window for device discovery
 ```

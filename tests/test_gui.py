@@ -1,3 +1,4 @@
+import gc
 import json
 import os
 import tempfile
@@ -33,6 +34,11 @@ class GuiTests(unittest.TestCase):
         except tk.TclError as exc:
             self.skipTest(f"no display: {exc}")
         self.root.withdraw()
+        # Cleanups run last-first: destroy the window, drop every reference to the
+        # Tk objects, then collect them here on the main thread. Otherwise a later
+        # test's worker thread may trigger the collection, and Tk aborts when its
+        # interpreter is freed outside the main thread.
+        self.addCleanup(self._release_tk)
         self.addCleanup(self.root.destroy)
         patches = [
             mock.patch.object(gui, "check_all", fake_check_all),
@@ -45,6 +51,11 @@ class GuiTests(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
         self.app = gui.InterconnectApp(self.root, EXAMPLE)
+
+    def _release_tk(self):
+        for name in ("app", "root"):
+            self.__dict__.pop(name, None)
+        gc.collect()
 
     def wait_for_run(self):
         deadline = time.time() + 10
@@ -210,6 +221,64 @@ class PortVerifyGuiTests(GuiTests):
     # Don't re-run the inherited ping tests in this class.
     test_run_accept_and_save = test_filter_by_switch = None
     test_invalid_entry_blocks_run = test_dialog_rejects_duplicates = None
+
+
+
+@unittest.skipIf(tk is None, "tkinter not available")
+class DiscoverGuiTests(GuiTests):
+    def test_discover_and_add(self):
+        from netcheck import gui_discover
+        from tests.test_discover import ARP, fake_ping
+        real = gui_discover.discover
+
+        def fake_discover(connections, networks, **kw):
+            return real(connections, networks, ping_fn=fake_ping, arp_fn=lambda: ARP,
+                        local_ips={"192.168.1.5"}, **kw)
+
+        with mock.patch.object(gui_discover, "discover", fake_discover), \
+                mock.patch.object(gui_discover.shutil, "which", return_value="/bin/ping"), \
+                mock.patch.object(gui_discover.messagebox, "askokcancel",
+                                  return_value=True) as confirm:
+            gui_discover.DiscoverWindow.scan_confirmed = False
+            self.app.open_discover()
+            window = self.app.discover_window
+            self.assertEqual(window.subnets_var.get(), "192.168.1.0/24")  # from the inventory
+            window.start()
+            deadline = time.time() + 10
+            while (window.running() or not window.events.empty()) and time.time() < deadline:
+                self.root.update()
+                time.sleep(0.02)
+            self.root.update()
+            confirm.assert_called_once()
+
+            shown = {window.tree.set(i, "ip"): window.tree.set(i, "category")
+                     for i in window.tree.get_children()}
+            self.assertEqual(shown["192.168.1.200"], "UNKNOWN")
+            self.assertEqual(shown["192.168.1.77"], "MOVED")
+            self.assertEqual(shown["192.168.1.10"], "MAC CONFLICT")
+            self.assertNotIn("192.168.1.1", shown)  # expected rows hidden by default
+            self.assertEqual(window.summary_labels["EXPECTED"].cget("text"), "EXPECTED: 2")
+            window.only_unexpected.set(False)
+            window.show()
+            self.assertEqual(len(window.tree.get_children()), 7)
+
+            # Add the unknown device (and a non-unknown one, which is skipped).
+            pick = [i for i in window.tree.get_children()
+                    if window.tree.set(i, "ip") in ("192.168.1.200", "192.168.1.77")]
+            window.tree.selection_set(pick)
+            window.add_selected()
+            self.assertTrue(self.app.dirty)
+            self.assertEqual(len(self.app.entries), 11)
+            self.assertEqual(self.app.entries[-1]["ip"], "192.168.1.200")
+            self.assertEqual(self.app.entries[-1]["expected_mac"], "3a:11:22:33:44:55")
+            self.assertIn("1 selected row(s) weren't unknown", gui.messagebox.showinfo.call_args[0][1])
+            window.close()
+            self.assertIsNone(self.app.discover_window)
+
+    # Don't re-run the inherited ping tests in this class.
+    test_run_accept_and_save = test_filter_by_switch = None
+    test_invalid_entry_blocks_run = test_dialog_rejects_duplicates = None
+    test_connection_dialog_help = None
 
 
 if __name__ == "__main__":

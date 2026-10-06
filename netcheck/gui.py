@@ -21,10 +21,8 @@ from .inventory import (
 )
 from .report import fill_discovered_macs, result_row, save_json, write_report
 
-try:
-    from .gui_portverify import PortVerifyWindow
-except ImportError:  # pragma: no cover - only if the module is missing
-    PortVerifyWindow = None
+from .gui_discover import DiscoverWindow
+from .gui_portverify import PortVerifyWindow
 
 APP_TITLE = "Network Interconnect Test"
 ALL = "(all)"
@@ -378,6 +376,7 @@ class InterconnectApp:
         self.events: "queue.Queue" = queue.Queue()
         self.sort_state: tuple[str, bool] = ("", False)
         self.port_window = None
+        self.discover_window = None
 
         root.title(APP_TITLE)
         root.geometry("1280x720")
@@ -421,6 +420,8 @@ class InterconnectApp:
 
         tools_menu = tk.Menu(menubar, tearoff=False)
         tools_menu.add_command(label="Run Ping/MAC Test", accelerator="F5", command=self.run_test)
+        tools_menu.add_command(label="Discover Devices on the Network...",
+                               command=self.open_discover)
         tools_menu.add_command(label="Verify Unused Ports with Test Switch...",
                                command=self.open_port_verify)
         menubar.add_cascade(label="Tools", menu=tools_menu)
@@ -448,6 +449,8 @@ class InterconnectApp:
             button.pack(side="left", padx=(4, 0))
         ttk.Button(bar, text="Verify Unused Ports...", command=self.open_port_verify).pack(
             side="right")
+        ttk.Button(bar, text="Discover Devices...", command=self.open_discover).pack(
+            side="right", padx=4)
 
     def _build_options(self) -> None:
         frame = ttk.LabelFrame(self.root, text="Test", padding=8)
@@ -732,6 +735,12 @@ class InterconnectApp:
             return
         self.port_window = PortVerifyWindow(self)
 
+    def open_discover(self) -> None:
+        if self.discover_window is not None:
+            self.discover_window.lift()
+            return
+        self.discover_window = DiscoverWindow(self)
+
     def filtered(self, connections: list) -> list:
         """Apply the Switch / Patch panel filters chosen in the main window."""
         if self.switch_var.get() != ALL:
@@ -897,6 +906,8 @@ class InterconnectApp:
             "5. Use 'Verify Unused Ports' to check unused runs with a test switch: patch "
             "its ports to the runs it lists, and it reads which production switch port "
             "each run lands on (CDP/LLDP).\n\n"
+            "6. Use 'Discover Devices' to sweep a subnet and list devices that answer but "
+            "aren't in the inventory (or have moved / changed MAC), and add them.\n\n"
             "Run from a computer on the same subnet/VLAN as the devices - MACs are only "
             "visible for devices on the local network segment."), parent=self.root)
 
@@ -904,6 +915,8 @@ class InterconnectApp:
 
     def running(self) -> bool:
         if self.port_window is not None and self.port_window.running():
+            return True
+        if self.discover_window is not None and self.discover_window.running():
             return True
         return self.worker is not None and self.worker.is_alive()
 

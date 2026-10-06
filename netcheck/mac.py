@@ -99,3 +99,54 @@ def lookup_mac(ip: str, system: Optional[str] = None) -> Optional[str]:
     if system == "linux":
         return _lookup_linux(ip)
     return _lookup_bsd(ip)
+
+
+# ---------------------------------------------------------------- whole table
+
+_IPV4_IN_TEXT = re.compile(r"(?<![\d.])((?:\d{1,3}\.){3}\d{1,3})(?![\d.])")
+
+
+def _usable(mac: Optional[str]) -> bool:
+    """A unicast MAC worth reporting (not empty, broadcast or multicast)."""
+    if not mac or mac in _INVALID_MACS:
+        return False
+    return not int(mac[:2], 16) & 1  # the multicast bit (01:00:5e..., 33:33...)
+
+
+def is_locally_administered(mac: Optional[str]) -> bool:
+    """True for randomised / private MACs (the locally administered bit is set)."""
+    mac = normalize_mac(mac)
+    return bool(mac) and bool(int(mac[:2], 16) & 2)
+
+
+def parse_arp_table(text: str, system: str) -> dict[str, str]:
+    """Parse neighbour-table output into {ip: mac} for unicast entries."""
+    table: dict[str, str] = {}
+    for line in text.splitlines():
+        if system == "linux" and "lladdr" not in line and "0x" not in line:
+            continue  # FAILED / INCOMPLETE entries from 'ip neigh'
+        ip = _IPV4_IN_TEXT.search(line)
+        mac = _MAC_IN_TEXT.search(line)
+        if not (ip and mac):
+            continue
+        value = normalize_mac(mac.group(1))
+        if _usable(value):
+            table.setdefault(ip.group(1), value)
+    return table
+
+
+def read_arp_table(system: Optional[str] = None) -> dict[str, str]:
+    """Return this computer's whole ARP / neighbour table as {ip: mac}."""
+    system = (system or platform.system()).lower()
+    if system == "windows":
+        return parse_arp_table(_run(["arp", "-a"]), system)
+    if system == "linux":
+        table = parse_arp_table(_run(["ip", "-4", "neigh", "show"]), system)
+        if table:
+            return table
+        try:
+            with open("/proc/net/arp", encoding="ascii") as fh:
+                return parse_arp_table(fh.read(), system)
+        except OSError:
+            return {}
+    return parse_arp_table(_run(["arp", "-an"]), system)
