@@ -86,34 +86,53 @@ class PortVerifyWindow(tk.Toplevel):
         self.clear_var = tk.BooleanVar(value=s.clear_tables)
 
         def field(row, col, label, var, width, show=None):
-            ttk.Label(frame, text=label).grid(row=row, column=col, sticky="w", padx=(0, 4), pady=3)
+            ttk.Label(frame, text=label).grid(row=row, column=col, sticky="w", padx=(0, 4))
             entry = ttk.Entry(frame, textvariable=var, width=width, show=show)
-            entry.grid(row=row, column=col + 1, sticky="w", padx=(0, 14), pady=3)
+            entry.grid(row=row, column=col + 1, sticky="w", padx=(0, 14))
             return entry
 
+        def hint(row, col, text, span=1):
+            """Example input, in grey directly under the field."""
+            ttk.Label(frame, text=text, foreground="#666666", font=("TkDefaultFont", 9)).grid(
+                row=row + 1, column=col, columnspan=span, sticky="nw", pady=(0, 6))
+
+        # Row 0: login
         field(0, 0, "Management IP:", self.host_var, 18)
+        hint(0, 1, "e.g. 192.168.1.250")
         field(0, 2, "Username:", self.user_var, 14)
-        field(0, 4, "Password:", self.password_var, 14, show="•")
-        field(0, 6, "Enable secret:", self.secret_var, 14, show="•")
-        for row, label, var in ((1, "Copper test ports:", self.ports_var),
-                                (2, "Fiber (SFP+) ports:", self.fiber_var)):
-            entry = field(row, 0, label, var, 18)
+        hint(0, 3, "e.g. admin")
+        field(0, 4, "Password:", self.password_var, 14, show="\u2022")
+        hint(0, 5, "never saved")
+        field(0, 6, "Enable secret:", self.secret_var, 14, show="\u2022")
+        hint(0, 7, "blank if privilege 15")
+
+        # Row 2: copper runs
+        copper = field(2, 0, "Copper test ports:", self.ports_var, 18)
+        hint(2, 1, "e.g. Gi1/0/1-22")
+        ttk.Label(frame, text="CDP wait (s):").grid(row=2, column=2, sticky="w")
+        ttk.Spinbox(frame, from_=20, to=600, increment=10, textvariable=self.timeout_var,
+                    width=6).grid(row=2, column=3, sticky="w")
+        hint(2, 3, "60-120; default 90")
+        ttk.Checkbutton(frame, text="Cable test (TDR)", variable=self.tdr_var).grid(
+            row=2, column=4, columnspan=2, sticky="w")
+        hint(2, 4, "copper runs only; adds ~10 s", span=2)
+        ttk.Checkbutton(frame, text="Clear CDP/LLDP tables per batch",
+                        variable=self.clear_var).grid(row=2, column=6, columnspan=2, sticky="w")
+        hint(2, 6, "recommended; needs privilege 15", span=2)
+
+        # Row 4: fiber runs
+        fiber = field(4, 0, "Fiber (SFP+) ports:", self.fiber_var, 18)
+        hint(4, 1, "e.g. Te1/1/1-2; blank = none")
+        ttk.Label(frame, text="Fiber error check (s):").grid(row=4, column=2, sticky="w")
+        ttk.Spinbox(frame, from_=0, to=3600, increment=30, textvariable=self.soak_var,
+                    width=6).grid(row=4, column=3, sticky="w")
+        hint(4, 3, "default 60; 0 = skip")
+        for entry in (copper, fiber):
             entry.bind("<FocusOut>", lambda _e: self.replan())
             entry.bind("<Return>", lambda _e: self.replan())
-        ttk.Label(frame, text="Fiber error check (s):").grid(row=2, column=2, sticky="w")
-        ttk.Spinbox(frame, from_=0, to=3600, increment=30, textvariable=self.soak_var,
-                    width=6).grid(row=2, column=3, sticky="w")
-        ttk.Label(frame, text="e.g. Te1/1/1-2 - leave blank if there are no fiber runs",
-                  foreground="#555555").grid(row=2, column=4, columnspan=4, sticky="w")
-        ttk.Label(frame, text="CDP wait (s):").grid(row=1, column=2, sticky="w")
-        ttk.Spinbox(frame, from_=20, to=600, increment=10, textvariable=self.timeout_var,
-                    width=6).grid(row=1, column=3, sticky="w")
-        ttk.Checkbutton(frame, text="Cable test (TDR)", variable=self.tdr_var).grid(
-            row=1, column=4, columnspan=2, sticky="w")
-        ttk.Checkbutton(frame, text="Clear CDP/LLDP tables per batch",
-                        variable=self.clear_var).grid(row=1, column=6, columnspan=2, sticky="w")
+
         self.connect_button = ttk.Button(frame, text="Connect", command=self.connect)
-        self.connect_button.grid(row=0, column=8, rowspan=3, padx=(6, 0), sticky="ns")
+        self.connect_button.grid(row=0, column=8, rowspan=6, padx=(6, 0), sticky="ns")
         # The fiber test only sees one direction: the test switch can read its own
         # SFP+ modules, but not the production switch's (no login there).
         self.fiber_note = ttk.Label(frame, foreground="#8a5a1c", justify="left",
@@ -123,9 +142,9 @@ class PortVerifyWindow(tk.Toplevel):
             "test switch to ESS 3300, is confirmed only by the link coming up at the expected "
             "speed: the ESS 3300's own receive level, errors and module readings can't be read "
             "without logging into it."))
-        self.fiber_note.grid(row=3, column=0, columnspan=8, sticky="w", pady=(4, 0))
+        self.fiber_note.grid(row=6, column=0, columnspan=8, sticky="w", pady=(2, 0))
         self.conn_status = ttk.Label(frame, text="Not connected", foreground="#555555")
-        self.conn_status.grid(row=4, column=0, columnspan=9, sticky="w", pady=(4, 0))
+        self.conn_status.grid(row=7, column=0, columnspan=9, sticky="w", pady=(4, 0))
 
     def _build_batch_bar(self) -> None:
         bar = ttk.Frame(self, padding=(8, 0))
