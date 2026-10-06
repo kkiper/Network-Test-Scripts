@@ -10,7 +10,8 @@ from typing import Optional
 from . import __version__
 from .discover import (
     DEFAULT_MAX_HOSTS, DEFAULT_OUI_PATH, EXPECTED, UNEXPECTED, UNKNOWN, discover, found_row,
-    load_oui, new_entry, parse_subnets, suggest_subnets, summarize, write_discovery,
+    load_oui, local_addresses, new_entry, off_subnet_warning, parse_subnets, primary_address,
+    suggest_subnets, summarize, write_discovery,
 )
 from .inventory import InventoryError, parse_inventory, read_json
 from .report import save_json
@@ -37,8 +38,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("inventory", nargs="?",
                         help="JSON inventory to compare with (optional)")
     parser.add_argument("-s", "--subnet", action="append", metavar="CIDR",
-                        help="subnet to sweep, e.g. 192.168.1.0/24 (repeatable; default: "
-                             "the /24s of the inventory's IP addresses)")
+                        help="subnet to sweep, e.g. 192.168.1.0/24 or '192.168.1.0 "
+                             "255.255.255.0' (repeatable; default: the /24s of the "
+                             "inventory's IP addresses, else this computer's /24)")
     parser.add_argument("-t", "--timeout", type=float, default=0.5,
                         help="seconds to wait for each ping reply (default 0.5)")
     parser.add_argument("-w", "--workers", type=int, default=64,
@@ -91,7 +93,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("error: --add-unknown needs an inventory file", file=sys.stderr)
         return EXIT_BAD_INPUT
 
-    subnet_text = " ".join(args.subnet or suggest_subnets(connections))
+    subnet_text = " ".join(args.subnet or suggest_subnets(connections,
+                                                          fallback=primary_address()))
     if not subnet_text:
         print("error: give the subnet(s) to sweep with --subnet, e.g. 192.168.1.0/24",
               file=sys.stderr)
@@ -108,6 +111,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("error: the 'ping' command was not found on this system", file=sys.stderr)
         return EXIT_BAD_INPUT
 
+    warning = off_subnet_warning(networks, local_addresses(networks))
+    if warning:
+        print(f"warning: {warning}", file=sys.stderr)
     subnets = [str(n) for n in networks]
     total = sum(n.num_addresses for n in networks)
     print(f"Sweeping {', '.join(subnets)} (up to {total} addresses). Only devices on this "

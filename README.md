@@ -85,7 +85,10 @@ everything else that's there.
 ![Discover devices](docs/discover.png)
 
 In the GUI, click **Discover Devices...**. The subnets are pre-filled from the inventory's IP
-addresses (their /24s) and can be edited, e.g. `192.168.1.0/24, 192.168.2.0/26`. Press
+addresses (their /24s), or from this computer's own address if the inventory has none. Enter
+the **network**, not just the mask: `192.168.1.0/24`, or `192.168.1.0 255.255.255.0`, or several
+separated by commas. Examples are shown under the box, along with this computer's address. If
+the computer isn't on the subnet you entered, you're warned before the sweep starts. Press
 **Start Discovery**. Each address gets one ping; a /24 takes about 5-10 seconds. Then this
 computer's ARP table is read, which also catches devices that block ping. Each device found is
 listed as:

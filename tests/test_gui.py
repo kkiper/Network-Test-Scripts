@@ -237,6 +237,7 @@ class DiscoverGuiTests(GuiTests):
 
         with mock.patch.object(gui_discover, "discover", fake_discover), \
                 mock.patch.object(gui_discover.shutil, "which", return_value="/bin/ping"), \
+                mock.patch.object(gui_discover, "local_addresses", return_value={"192.168.1.5"}), \
                 mock.patch.object(gui_discover.messagebox, "askokcancel",
                                   return_value=True) as confirm:
             gui_discover.DiscoverWindow.scan_confirmed = False
@@ -274,6 +275,26 @@ class DiscoverGuiTests(GuiTests):
             self.assertIn("1 selected row(s) weren't unknown", gui.messagebox.showinfo.call_args[0][1])
             window.close()
             self.assertIsNone(self.app.discover_window)
+
+    def test_discover_rejects_mask_and_warns_off_subnet(self):
+        from netcheck import gui_discover
+        with mock.patch.object(gui_discover.shutil, "which", return_value="/bin/ping"), \
+                mock.patch.object(gui_discover, "local_addresses", return_value=set()), \
+                mock.patch("netcheck.discover.primary_address", return_value="10.20.30.40"), \
+                mock.patch.object(gui_discover.messagebox, "askokcancel",
+                                  return_value=False) as ask:
+            self.app.open_discover()
+            window = self.app.discover_window
+            window.subnets_var.set("255.255.255.0")
+            window.start()
+            self.assertIn("is a subnet mask, not a subnet",
+                          gui.messagebox.showerror.call_args[0][1])
+            window.subnets_var.set("192.168.1.0 255.255.255.0")
+            window.start()  # this computer isn't on 192.168.1.0/24: warn, user cancels
+            self.assertEqual(ask.call_args[0][0], "Different subnet")
+            self.assertIn("so you may want 10.20.30.0/24", ask.call_args[0][1])
+            self.assertFalse(window.running())
+            window.close()
 
     # Don't re-run the inherited ping tests in this class.
     test_run_accept_and_save = test_filter_by_switch = None

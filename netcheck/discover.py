@@ -58,16 +58,49 @@ class Found:
 
 # ------------------------------------------------------------------- subnets
 
+def is_netmask(text: str) -> bool:
+    """True for a dotted subnet mask such as 255.255.255.0."""
+    try:
+        value = int(ipaddress.IPv4Address(text))
+    except ValueError:
+        return False
+    inverted = ~value & 0xFFFFFFFF
+    # A mask is a run of 1s followed by 0s, and starts with 255.
+    return value >> 24 == 0xFF and inverted & (inverted + 1) == 0
+
+
 def parse_subnets(text: str, max_hosts: int = DEFAULT_MAX_HOSTS) -> list[ipaddress.IPv4Network]:
-    """Parse '192.168.1.0/24, 10.0.5.10' into networks. Raises ValueError if invalid."""
+    """Parse subnets into networks. Raises ValueError, with a hint, if invalid.
+
+    Accepts CIDR ('192.168.1.0/24'), an address in the subnet ('192.168.1.20/24'),
+    'address mask' pairs ('192.168.1.0 255.255.255.0' or '192.168.1.0/255.255.255.0'),
+    and single addresses ('10.0.5.10').
+    """
     networks: list[ipaddress.IPv4Network] = []
-    for part in text.replace(",", " ").split():
+    parts = text.replace(",", " ").split()
+    i = 0
+    while i < len(parts):
+        part = parts[i]
+        # "192.168.1.0 255.255.255.0": an address followed by its mask.
+        if "/" not in part and i + 1 < len(parts) and is_netmask(parts[i + 1]) \
+                and not is_netmask(part):
+            part = f"{part}/{parts[i + 1]}"
+            i += 1
+        i += 1
+        if is_netmask(part.split("/")[0]):
+            raise ValueError(
+                f"'{part}' is a subnet mask, not a subnet. Enter the network your devices "
+                "are on, e.g. 192.168.1.0/24 for addresses 192.168.1.x with mask "
+                "255.255.255.0 (or type '192.168.1.0 255.255.255.0').")
         try:
             network = ipaddress.ip_network(part, strict=False)
         except ValueError as exc:
             raise ValueError(f"'{part}' is not a subnet (use e.g. 192.168.1.0/24)") from exc
         if network.version != 4:
             raise ValueError(f"'{part}': only IPv4 subnets can be swept")
+        if network.network_address.is_unspecified or network.network_address.is_multicast:
+            raise ValueError(f"'{part}' isn't a network devices can be on "
+                             "(use e.g. 192.168.1.0/24)")
         if network not in networks:
             networks.append(network)
     if not networks:
@@ -93,8 +126,24 @@ def hosts(networks: Iterable[ipaddress.IPv4Network]) -> list[str]:
     return list(seen)
 
 
-def suggest_subnets(connections: Iterable[Connection]) -> list[str]:
-    """The /24 subnets containing the inventory's IPv4 addresses."""
+def primary_address() -> Optional[str]:
+    """This computer's main IPv4 address (the one its default route uses), if any."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("192.0.2.1", 9))  # documentation address; nothing is sent
+            address = sock.getsockname()[0]
+    except OSError:
+        return None
+    return None if address.startswith(("0.", "127.")) else address
+
+
+def suggest_subnets(connections: Iterable[Connection],
+                    fallback: Optional[str] = None) -> list[str]:
+    """The /24 subnets containing the inventory's IPv4 addresses.
+
+    If the inventory has none, the /24 around ``fallback`` (normally this
+    computer's own address) is suggested instead.
+    """
     subnets: dict[str, None] = {}
     for conn in connections:
         try:
@@ -103,7 +152,22 @@ def suggest_subnets(connections: Iterable[Connection]) -> list[str]:
             continue
         if address.version == 4:
             subnets[str(ipaddress.ip_network(f"{address}/24", strict=False))] = None
+    if not subnets and fallback:
+        subnets[str(ipaddress.ip_network(f"{fallback}/24", strict=False))] = None
     return list(subnets)
+
+
+def off_subnet_warning(networks: list[ipaddress.IPv4Network],
+                       local_ips: Iterable[str]) -> Optional[str]:
+    """Warn when this computer has no address in any of the swept subnets."""
+    if set(local_ips):
+        return None
+    mine = primary_address()
+    hint = (f" This computer is {mine}, so you may want "
+            f"{ipaddress.ip_network(f'{mine}/24', strict=False)}." if mine else "")
+    return ("This computer doesn't have an address in "
+            f"{', '.join(map(str, networks))}. Devices there may answer ping, but their MAC "
+            "addresses can't be read, and devices that block ping won't be found." + hint)
 
 
 def local_addresses(networks: Iterable[ipaddress.IPv4Network]) -> set[str]:

@@ -11,8 +11,9 @@ from unittest import mock
 
 from netcheck import discovercli
 from netcheck.discover import (
-    EXPECTED, MAC_CONFLICT, MOVED, NOT_FOUND, UNKNOWN, classify, discover, hosts, load_oui,
-    new_entry, parse_subnets, suggest_subnets, sweep, vendor_of, write_discovery,
+    EXPECTED, MAC_CONFLICT, MOVED, NOT_FOUND, UNKNOWN, classify, discover, hosts, is_netmask,
+    load_oui, new_entry, off_subnet_warning, parse_subnets, suggest_subnets, sweep, vendor_of,
+    write_discovery,
 )
 from netcheck.inventory import load_inventory
 from netcheck.mac import is_locally_administered, parse_arp_table
@@ -82,10 +83,33 @@ class SubnetTests(unittest.TestCase):
         self.assertEqual(len(hosts(nets)), 254 + 2 + 1)
         self.assertEqual(str(parse_subnets("192.168.1.77/24")[0]), "192.168.1.0/24")
 
+    def test_masks(self):
+        with self.assertRaises(ValueError) as ctx:
+            parse_subnets("255.255.255.0")
+        self.assertIn("'255.255.255.0' is a subnet mask, not a subnet", str(ctx.exception))
+        self.assertIn("192.168.1.0/24", str(ctx.exception))
+        for text in ("192.168.1.0 255.255.255.0", "192.168.1.20 255.255.255.0",
+                     "192.168.1.0/255.255.255.0", "192.168.1.20/24"):
+            self.assertEqual([str(n) for n in parse_subnets(text)], ["192.168.1.0/24"], text)
+        self.assertEqual([str(n) for n in parse_subnets("10.0.0.8 255.255.255.248, 10.1.0.0/30")],
+                         ["10.0.0.8/29", "10.1.0.0/30"])
+        self.assertTrue(is_netmask("255.255.255.192"))
+        self.assertFalse(is_netmask("255.0.255.0"))
+        self.assertFalse(is_netmask("192.168.1.1"))
+
+    def test_off_subnet_warning(self):
+        nets = parse_subnets("192.168.1.0/24")
+        self.assertIsNone(off_subnet_warning(nets, {"192.168.1.5"}))
+        with mock.patch("netcheck.discover.primary_address", return_value="10.20.30.40"):
+            warning = off_subnet_warning(nets, set())
+        self.assertIn("doesn't have an address in 192.168.1.0/24", warning)
+        self.assertIn("This computer is 10.20.30.40, so you may want 10.20.30.0/24", warning)
+        self.assertEqual(suggest_subnets([], fallback="10.20.30.40"), ["10.20.30.0/24"])
+
     def test_rejects(self):
         for text, message in [("", "at least one subnet"), ("fe80::/64", "only IPv4"),
                               ("10.0.0.0/16", "65534 addresses; the limit is 1024"),
-                              ("banana", "'banana' is not a subnet")]:
+                              ("banana", "'banana' is not a subnet"), ("0.0.0.0", "isn't a network")]:
             with self.assertRaises(ValueError) as ctx:
                 parse_subnets(text)
             self.assertIn(message, str(ctx.exception))
@@ -199,6 +223,7 @@ class DiscoverCliTests(unittest.TestCase):
                                                        arp_fn=lambda: ARP,
                                                        local_ips={"192.168.1.5"}, **kw)), \
                 mock.patch.object(discovercli.shutil, "which", return_value="/bin/ping"), \
+                mock.patch.object(discovercli, "local_addresses", return_value={"192.168.1.5"}), \
                 mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
             code = discovercli.main(args)
         return code, out.getvalue(), err.getvalue()
@@ -224,9 +249,13 @@ class DiscoverCliTests(unittest.TestCase):
         code, out, _ = self.run_cli(["--subnet", "192.168.1.0/24", "--all", "--no-colour"])
         self.assertEqual(code, 1)
         self.assertIn("5 unknown", out)
-        code, _out, err = self.run_cli([])
+        with mock.patch.object(discovercli, "primary_address", return_value=None):
+            code, _out, err = self.run_cli([])
         self.assertEqual(code, 2)
         self.assertIn("give the subnet(s) to sweep", err)
+        code, _out, err = self.run_cli(["--subnet", "255.255.255.0"])
+        self.assertEqual(code, 2)
+        self.assertIn("is a subnet mask, not a subnet", err)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,8 @@ from typing import Optional
 
 from .discover import (
     DEFAULT_OUI_PATH, EXPECTED, MAC_CONFLICT, MOVED, NOT_FOUND, UNKNOWN, Found, discover,
-    found_row, load_oui, new_entry, parse_subnets, suggest_subnets, summarize, write_discovery,
+    found_row, load_oui, local_addresses, new_entry, off_subnet_warning, parse_subnets,
+    primary_address, suggest_subnets, summarize, write_discovery,
 )
 from .inventory import InventoryError, parse_inventory
 
@@ -65,31 +66,43 @@ class DiscoverWindow(tk.Toplevel):
         frame = ttk.LabelFrame(self, text="Sweep (only devices on this computer's subnet/VLAN "
                                           "can be found)", padding=8)
         frame.pack(fill="x", padx=8, pady=8)
-        self.subnets_var = tk.StringVar(value=", ".join(suggest_subnets(self._connections())))
+        self.my_address = primary_address()
+        self.subnets_var = tk.StringVar(value=", ".join(
+            suggest_subnets(self._connections(), fallback=self.my_address)))
         self.timeout_var = tk.DoubleVar(value=0.5)
         self.workers_var = tk.IntVar(value=64)
         self.only_unexpected = tk.BooleanVar(value=True)
 
-        ttk.Label(frame, text="Subnets:").pack(side="left")
-        ttk.Entry(frame, textvariable=self.subnets_var, width=36).pack(side="left", padx=(4, 12))
-        ttk.Label(frame, text="Timeout (s):").pack(side="left")
+        ttk.Label(frame, text="Subnets:").grid(row=0, column=0, sticky="w")
+        ttk.Entry(frame, textvariable=self.subnets_var, width=40).grid(
+            row=0, column=1, sticky="w", padx=(4, 12))
+        ttk.Label(frame, text="Timeout (s):").grid(row=0, column=2, sticky="w")
         ttk.Spinbox(frame, from_=0.2, to=5, increment=0.1, textvariable=self.timeout_var,
-                    width=5).pack(side="left", padx=(4, 12))
-        ttk.Label(frame, text="Parallel:").pack(side="left")
+                    width=5).grid(row=0, column=3, sticky="w", padx=(4, 12))
+        ttk.Label(frame, text="Parallel:").grid(row=0, column=4, sticky="w")
         ttk.Spinbox(frame, from_=1, to=256, increment=8, textvariable=self.workers_var,
-                    width=5).pack(side="left", padx=(4, 12))
+                    width=5).grid(row=0, column=5, sticky="w", padx=(4, 12))
         self.start_button = ttk.Button(frame, text="Start Discovery", style="Run.TButton",
                                        command=self.start)
-        self.start_button.pack(side="left", padx=4)
+        self.start_button.grid(row=0, column=6, padx=4)
         self.stop_button = ttk.Button(frame, text="Stop", command=self.stop, state="disabled")
-        self.stop_button.pack(side="left")
+        self.stop_button.grid(row=0, column=7)
+        # Example input, directly under the Subnets box.
+        ttk.Label(frame, foreground="#555555", justify="left", text=(
+            "Examples:  192.168.1.0/24   or   192.168.1.0 255.255.255.0\n"
+            "Several:   192.168.1.0/24, 10.0.5.0/26     (the network, not just the mask)")
+        ).grid(row=1, column=1, columnspan=7, sticky="w", padx=(4, 0), pady=(2, 0))
+        if self.my_address:
+            ttk.Label(frame, foreground="#1f4e8c",
+                      text=f"This computer: {self.my_address}").grid(
+                row=2, column=1, columnspan=7, sticky="w", padx=(4, 0))
 
         bar = ttk.Frame(self, padding=(8, 0))
         bar.pack(fill="x")
         self.progress = ttk.Progressbar(bar, length=260, mode="determinate")
         self.progress.pack(side="left")
-        self.progress_label = ttk.Label(bar, text="Enter the subnet(s) to sweep, e.g. "
-                                                  "192.168.1.0/24, then press Start Discovery.")
+        self.progress_label = ttk.Label(
+            bar, text="Enter the subnet(s) to sweep, then press Start Discovery.")
         self.progress_label.pack(side="left", padx=10)
         ttk.Checkbutton(bar, text="Show only unexpected", variable=self.only_unexpected,
                         command=self.show).pack(side="right")
@@ -173,6 +186,10 @@ class DiscoverWindow(tk.Toplevel):
                                  parent=self)
             return
         count = sum(n.num_addresses for n in networks)
+        warning = off_subnet_warning(networks, local_addresses(networks))
+        if warning and not messagebox.askokcancel("Different subnet", warning + "\n\nSweep "
+                                                  "anyway?", icon="warning", parent=self):
+            return
         if not DiscoverWindow.scan_confirmed:
             if not messagebox.askokcancel(
                     "Network sweep",
