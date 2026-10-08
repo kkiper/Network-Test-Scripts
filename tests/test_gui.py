@@ -349,5 +349,70 @@ class DiscoverGuiTests(GuiTests):
     test_connection_dialog_help = test_wired_interface_bar = None
 
 
+@unittest.skipIf(tk is None, "tkinter not available")
+class AuditGuiTests(GuiTests):
+    def test_audit_and_add_unlisted(self):
+        from netcheck import gui_audit
+        from tests.test_switchaudit import core_session
+        session = core_session()
+        calls = []
+
+        def fake_connect(host, username, password, device_type, ssh_port, iface):
+            calls.append((host, username, password, iface.name))
+            return session
+
+        with mock.patch.object(gui_audit, "connect_to", fake_connect), \
+                mock.patch.object(gui_audit.messagebox, "showerror") as error, \
+                mock.patch.object(gui_audit.messagebox, "showinfo") as info:
+            self.app.open_audit()
+            window = self.app.audit_window
+            self.assertEqual(list(window.switch_vars), ["SW-ACCESS-01", "SW-CORE-01"])
+            window.run()  # no switch ticked yet (no addresses in the inventory)
+            self.assertIn("Tick at least one switch", info.call_args[0][1])
+
+            core = window.switch_vars["SW-CORE-01"]
+            core["enabled"].set(True)
+            core["host"].set("192.168.1.2")
+            core["username"].set("netcheck-ro")
+            core["password"].set("secret")
+            window.run()
+            deadline = time.time() + 10
+            while (window.running() or not window.events.empty()) and time.time() < deadline:
+                self.root.update()
+                time.sleep(0.02)
+            self.root.update()
+            error.assert_not_called()
+            self.assertEqual(calls, [("192.168.1.2", "netcheck-ro", "secret", "Ethernet")])
+            self.assertTrue(all(c.startswith("show ") for c in session.sent))
+            self.assertEqual(self.app.data["switches"]["SW-CORE-01"],
+                             {"host": "192.168.1.2", "username": "netcheck-ro"})
+            self.assertNotIn("secret", json.dumps(self.app.data))
+
+            self.assertEqual(window.tree.set("r0", "result"), "PASS")
+            self.assertEqual(window.tree.set("r1", "result"), "FAIL")
+            self.assertIn("is on SW-CORE-01 Gi1/0/7", window.tree.set("r1", "detail"))
+            self.assertIn("no traffic seen", window.tree.set("r3", "detail"))
+            # Results show in the main table too.
+            self.assertEqual(self.app.tree.set("1", "result"), "PASS")
+            self.assertEqual(self.app.tree.set("2", "result"), "FAIL")
+            unlisted = {window.tree.set(i, "port"): i for i in window.tree.get_children()
+                        if window.tree.set(i, "result") == "UNLISTED"}
+            self.assertEqual(set(unlisted), {"Gi1/0/7", "Gi1/0/9", "Gi1/0/12"})
+
+            window.tree.selection_set([unlisted["Gi1/0/7"]])
+            window.add_selected()
+            self.assertEqual(len(self.app.entries), 11)
+            self.assertEqual(self.app.entries[-1]["switch_port"], "Gi1/0/7")
+            self.assertEqual(self.app.entries[-1]["expected_mac"], "00:1a:2b:3c:4d:10")
+            self.assertEqual(len(window.unlisted), 2)
+            window.close()
+            self.assertIsNone(self.app.audit_window)
+
+    # Don't re-run the inherited ping tests in this class.
+    test_run_accept_and_save = test_filter_by_switch = None
+    test_invalid_entry_blocks_run = test_dialog_rejects_duplicates = None
+    test_connection_dialog_help = test_wired_interface_bar = None
+
+
 if __name__ == "__main__":
     unittest.main()

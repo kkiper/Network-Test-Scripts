@@ -36,6 +36,7 @@ class PortCheck:
     cable_test: str = ""
     optics: str = ""   # fiber: transceiver light levels
     errors: str = ""   # fiber: receive errors seen while the link was watched
+    macs: str = ""     # switch port audit: MAC addresses learned on the port
 
 
 @dataclass

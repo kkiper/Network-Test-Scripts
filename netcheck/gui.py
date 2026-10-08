@@ -21,6 +21,7 @@ from .inventory import (
 )
 from .report import fill_discovered_macs, result_row, save_json, write_report
 
+from .gui_audit import AuditWindow
 from .gui_discover import DiscoverWindow
 from .gui_portverify import PortVerifyWindow
 
@@ -377,6 +378,7 @@ class InterconnectApp:
         self.sort_state: tuple[str, bool] = ("", False)
         self.port_window = None
         self.discover_window = None
+        self.audit_window = None
 
         root.title(APP_TITLE)
         root.geometry("1280x720")
@@ -423,6 +425,8 @@ class InterconnectApp:
         tools_menu.add_command(label="Run Ping/MAC Test", accelerator="F5", command=self.run_test)
         tools_menu.add_command(label="Discover Devices on the Network...",
                                command=self.open_discover)
+        tools_menu.add_command(label="Audit Switch Ports (read-only)...",
+                               command=self.open_audit)
         tools_menu.add_command(label="Verify Unused Ports with Test Switch...",
                                command=self.open_port_verify)
         menubar.add_cascade(label="Tools", menu=tools_menu)
@@ -452,6 +456,8 @@ class InterconnectApp:
             side="right")
         ttk.Button(bar, text="Discover Devices...", command=self.open_discover).pack(
             side="right", padx=4)
+        ttk.Button(bar, text="Audit Switch Ports...", command=self.open_audit).pack(
+            side="right")
 
     def _build_interface_bar(self) -> None:
         """Which wired Ethernet interface every test uses (Wi-Fi is never used)."""
@@ -799,6 +805,14 @@ class InterconnectApp:
             return
         self.port_window = PortVerifyWindow(self)
 
+    def open_audit(self) -> None:
+        if self.audit_window is not None:
+            self.audit_window.lift()
+            return
+        if self.running():
+            return
+        self.audit_window = AuditWindow(self)
+
     def open_discover(self) -> None:
         if self.discover_window is not None:
             self.discover_window.lift()
@@ -981,6 +995,8 @@ class InterconnectApp:
         if self.port_window is not None and self.port_window.running():
             return True
         if self.discover_window is not None and self.discover_window.running():
+            return True
+        if self.audit_window is not None and self.audit_window.running():
             return True
         return self.worker is not None and self.worker.is_alive()
 

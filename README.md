@@ -281,6 +281,64 @@ Notes:
 - **Production switches:** they will log a new CDP neighbour when a test port connects.
   That's harmless, and nothing on them is changed.
 
+## Switch port audit (needs read-only access)
+
+Ping Test and Discover only see devices that have an IP address. The Switch Port Audit asks the
+production switches themselves: it logs into SW-CORE-01, SW-EDGE-02, etc. with a **read-only**
+account and reads their port status, MAC address tables and CDP/LLDP neighbours. That shows
+**which port every device is really on, including devices with no IP address**.
+
+**Only `show` commands are sent:** `show interfaces status`, `show mac address-table`,
+`show cdp neighbors detail` and `show lldp neighbors detail`. There is no `enable`, no
+`clear` and no configuration.
+
+> **Limit:** a switch only learns a MAC address from frames the device sends. A device that sends
+> nothing, e.g. a server with no OS installed and PXE boot off, never appears in a MAC table. Its
+> port's **link and speed** are still visible, and the audit reports "link up at 10 Gb/s but no
+> traffic seen" as a WARN.
+
+**What the production switches need.** This is the only change to them, and it isn't made by this
+tool. Ask the network owner for it; see
+[`docs/production_switch_readonly.cfg`](docs/production_switch_readonly.cfg).
+
+| Requirement | Usually already there? |
+|-------------|------------------------|
+| A **read-only** login: a local `privilege 1` user, or a read-only TACACS+/RADIUS role | No: this is the request |
+| SSH enabled on the switch's management address | Usually yes |
+| The management address reachable from the laptop (same subnet as the devices, through the test switch's production link) | Yes in this setup |
+| `show mac address-table` etc. allowed at privilege 1 | Yes by default on IOS XE |
+| LLDP (`lldp run`) | Optional: only to hear LLDP that devices send themselves |
+
+**In the GUI**, click **Audit Switch Ports...**. Tick each switch to audit and enter its
+management IP, read-only username and password (never saved). Then press **Run Audit**. The
+results also appear in the main window. Ports with a link or traffic that the inventory
+doesn't list are shown as **UNLISTED**; **Add Selected Unlisted to Inventory** adds them as new rows.
+
+![Switch port audit](docs/switch_audit.png)
+
+**Or from the command line** (it prompts for each password, or reads `$NETCHECK_SWITCH_PASSWORD`):
+
+```sh
+pip install -r requirements.txt
+python switch_audit.py my_network.json                  # every switch in "switches"
+python switch_audit.py my_network.json --switch SW-CORE-01 --host 192.168.1.2 --username netcheck-ro
+```
+
+Options: `-o report.csv`, `--no-colour`, `--interface`/`--list-interfaces`. Exit code `1` means
+at least one FAIL or an unlisted port.
+
+| Result | Meaning |
+|--------|---------|
+| PASS | The expected MAC is on the expected port; or, with no expected MAC, exactly one device is there (its MAC is shown and can be accepted). An `unused` port with no link. |
+| FAIL | The expected MAC is on **another** port or switch (the message says where), a different device is on the port, no link, the link is slower than `expected_speed`, or an `unused` port has something connected. |
+| WARN | Link up but no traffic (a silent device, see the limit above); several MACs on the port; or the port is an uplink to another switch. |
+
+Uplinks (ports with a CDP/LLDP neighbour that is a switch, or more than 8 MACs) are skipped when
+looking for devices. A device behind SW-EDGE-02 is found when SW-EDGE-02 itself is audited.
+
+> The audit hasn't yet been run against a real ESS 3300. The first time, audit one switch and
+> compare its results with `show mac address-table` on that switch.
+
 ## Describing the expected interconnect
 
 `my_network.json` in the commands in this README stands for **your own** inventory file.
@@ -355,6 +413,20 @@ The optional `test_switch` section stores the test switch settings: `host`, `use
 (default false), `clear_tables` (default true), `allow_switchports` (default false),
 `device_type` (Netmiko type, default `cisco_xe`) and `ssh_port` (default 22). The GUI
 fills it in for you. Passwords are never stored.
+
+The optional `switches` section stores the production switches' login details for the
+[Switch Port Audit](#switch-port-audit-needs-read-only-access), keyed by the switch names used
+in the rows:
+
+```json
+"switches": {
+  "SW-CORE-01": {"host": "192.168.1.2", "username": "netcheck-ro"},
+  "SW-EDGE-02": {"host": "192.168.1.3", "username": "netcheck-ro"}
+}
+```
+
+`device_type` (default `cisco_xe`) and `ssh_port` (default 22) are optional. The audit window
+fills this in for you. Passwords are never stored.
 
 JSON has no comments, so use `notes` or any extra field you like (e.g. `"cable_id"`).
 Extra fields, and extra top-level keys such as `description`, are ignored by the
@@ -440,4 +512,9 @@ netcheck/netif.py         finds the wired Ethernet interface(s) on Windows, Linu
 netcheck/discover.py      subnet sweep, ARP table comparison and classification
 netcheck/discovercli.py   command-line options for discover.py
 netcheck/gui_discover.py  GUI window for device discovery
+switch_audit.py           command-line read-only audit of the production switches
+docs/production_switch_readonly.cfg  the read-only login to request on the production switches
+netcheck/switchaudit.py   reads the production switches' tables and compares them with the inventory
+netcheck/auditcli.py      command-line options for switch_audit.py
+netcheck/gui_audit.py     GUI window for the switch port audit
 ```

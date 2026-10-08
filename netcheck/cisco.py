@@ -107,6 +107,15 @@ class Neighbor:
     remote_port: str         # remote port as advertised
     platform: str = ""
     ip: str = ""
+    capabilities: str = ""   # CDP "Switch IGMP" / LLDP enabled capabilities "B,R"
+
+    @property
+    def is_switch(self) -> bool:
+        """True when the neighbour says it's a switch/bridge or router."""
+        caps = self.capabilities
+        if self.protocol == "CDP":
+            return bool(re.search(r"\b(Switch|Router|Trans-Bridge|Source-Route-Bridge)\b", caps))
+        return bool(re.search(r"\b[BR]\b", caps))
 
 
 def _not_enabled(text: str) -> bool:
@@ -126,6 +135,7 @@ def parse_cdp_neighbors_detail(text: str) -> list[Neighbor]:
         if not (device and iface):
             continue
         platform = re.search(r"^Platform:\s*([^,]+)", block, re.MULTILINE)
+        caps = re.search(r"Capabilities:\s*(.+?)\s*$", block, re.MULTILINE)
         ip = re.search(r"IP(?:v4)? address:\s*(\S+)", block)
         neighbors.append(Neighbor(
             protocol="CDP",
@@ -134,6 +144,7 @@ def parse_cdp_neighbors_detail(text: str) -> list[Neighbor]:
             remote_port=iface.group(2),
             platform=platform.group(1).strip() if platform else "",
             ip=ip.group(1) if ip else "",
+            capabilities=caps.group(1) if caps else "",
         ))
     return neighbors
 
@@ -152,6 +163,7 @@ def parse_lldp_neighbors_detail(text: str) -> list[Neighbor]:
         system = re.search(r"^System Name:\s*(.+?)\s*$", block, re.MULTILINE)
         chassis = re.search(r"^Chassis id:\s*(.+?)\s*$", block, re.MULTILINE)
         ip = re.search(r"IP(?:v4)?:\s*(\d+\.\d+\.\d+\.\d+)", block)
+        caps = re.search(r"^Enabled Capabilities:\s*(.+?)\s*$", block, re.MULTILINE)
         # Port id is usually the interface name, but some devices send a MAC;
         # fall back to the port description in that case.
         remote = port_id.group(1) if port_id else ""
@@ -164,6 +176,7 @@ def parse_lldp_neighbors_detail(text: str) -> list[Neighbor]:
             device_id=name or (chassis.group(1) if chassis else ""),
             remote_port=remote,
             ip=ip.group(1) if ip else "",
+            capabilities=caps.group(1) if caps else "",
         ))
     return neighbors
 
@@ -391,3 +404,36 @@ def parse_counters_errors(text: str) -> dict[str, int]:
                 totals[port] = totals.get(port, 0) + int(value)
         totals.setdefault(port, 0)
     return totals
+
+
+# --------------------------------------------------------- MAC address table
+
+@dataclass
+class MacEntry:
+    vlan: str
+    mac: str    # aa:bb:cc:dd:ee:ff
+    type: str   # DYNAMIC / STATIC / ...
+
+
+_MAC_ROW = re.compile(
+    r"^\s*(\S+)\s+([0-9a-fA-F]{4}\.[0-9a-fA-F]{4}\.[0-9a-fA-F]{4})\s+(\S+)\s+(?:\S+\s+)*?(\S+)\s*$")
+
+
+def parse_mac_address_table(text: str) -> dict[str, list[MacEntry]]:
+    """Parse 'show mac address-table' into {canonical port: [MacEntry, ...]}.
+
+    Entries on CPU / Drop / Router and other non-port destinations are skipped.
+    """
+    from .mac import normalize_mac  # local import: mac doesn't depend on cisco
+
+    table: dict[str, list[MacEntry]] = {}
+    for line in text.splitlines():
+        match = _MAC_ROW.match(line)
+        if not match:
+            continue
+        port = normalize_interface(match.group(4))
+        mac = normalize_mac(match.group(2))
+        if port is None or mac is None:
+            continue
+        table.setdefault(port, []).append(MacEntry(match.group(1), mac, match.group(3).upper()))
+    return table
