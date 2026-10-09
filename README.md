@@ -327,6 +327,8 @@ which is kept in memory only until you close the program. Each run then:
    - **Switches with no address, or that can't be logged into:** their rows keep the ping result
      only, and a warning says which switch failed.
 
+![Ping Test with switch ports](docs/ping_test_switch_ports.png)
+
 Untick **Check switch ports** for a ping-only run. The ports in use that aren't in the inventory
 are listed in **Audit Switch Ports...**, without logging in again.
 
