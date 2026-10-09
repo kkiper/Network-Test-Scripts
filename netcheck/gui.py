@@ -19,12 +19,8 @@ from .inventory import (
     KNOWN_FIELDS, STATUS_UNUSED, VALID_MEDIA, VALID_STATUSES, InventoryError, parse_inventory,
     read_json, validate_entry,
 )
-from .mac import read_arp_table
 from .report import fill_discovered_macs, result_row, save_json, write_report
-from .switch import SwitchError, connect_to
-from .switchaudit import collect, combine, logins_from_inventory
 
-from .gui_audit import AuditWindow, SwitchPasswordDialog
 from .gui_discover import DiscoverWindow
 from .gui_portverify import PortVerifyWindow
 
@@ -381,9 +377,6 @@ class InterconnectApp:
         self.sort_state: tuple[str, bool] = ("", False)
         self.port_window = None
         self.discover_window = None
-        self.audit_window = None
-        self.switch_passwords: dict[str, str] = {}  # memory only, never saved
-        self.last_audit = None  # (results, unlisted) from the last switch port check
 
         root.title(APP_TITLE)
         root.geometry("1280x720")
@@ -430,8 +423,6 @@ class InterconnectApp:
         tools_menu.add_command(label="Run Ping/MAC Test", accelerator="F5", command=self.run_test)
         tools_menu.add_command(label="Discover Devices on the Network...",
                                command=self.open_discover)
-        tools_menu.add_command(label="Audit Switch Ports (read-only)...",
-                               command=self.open_audit)
         tools_menu.add_command(label="Verify Unused Ports with Test Switch...",
                                command=self.open_port_verify)
         menubar.add_cascade(label="Tools", menu=tools_menu)
@@ -461,8 +452,6 @@ class InterconnectApp:
             side="right")
         ttk.Button(bar, text="Discover Devices...", command=self.open_discover).pack(
             side="right", padx=4)
-        ttk.Button(bar, text="Audit Switch Ports...", command=self.open_audit).pack(
-            side="right")
 
     def _build_interface_bar(self) -> None:
         """Which wired Ethernet interface every test uses (Wi-Fi is never used)."""
@@ -539,9 +528,6 @@ class InterconnectApp:
         self.run_button = ttk.Button(frame, text="Ping Test (F5)", style="Run.TButton",
                                      command=self.run_test)
         self.run_button.pack(side="right", padx=4)
-        self.audit_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(frame, text="Check switch ports", variable=self.audit_var).pack(
-            side="right", padx=(10, 4))
 
         self.count_var = tk.IntVar(value=2)
         self.timeout_var = tk.DoubleVar(value=1.0)
@@ -554,15 +540,15 @@ class InterconnectApp:
             ttk.Spinbox(frame, from_=lo, to=hi, increment=inc, textvariable=var,
                         width=width).pack(side="left", padx=(0, 10))
 
-        spin("Pings:", self.count_var, 1, 20, 1, width=3)
-        spin("Timeout (s):", self.timeout_var, 0.2, 10, 0.5, width=4)
-        spin("Parallel:", self.workers_var, 1, 128, 1, width=4)
+        spin("Pings per device:", self.count_var, 1, 20, 1)
+        spin("Timeout (s):", self.timeout_var, 0.2, 10, 0.5)
+        spin("Parallel:", self.workers_var, 1, 128, 1)
 
         ttk.Label(frame, text="Switch:").pack(side="left", padx=(0, 4))
         self.switch_combo = ttk.Combobox(frame, textvariable=self.switch_var,
-                                         state="readonly", width=11)
+                                         state="readonly", width=14)
         self.switch_combo.pack(side="left", padx=(0, 10))
-        ttk.Label(frame, text="Panel:").pack(side="left", padx=(0, 4))
+        ttk.Label(frame, text="Patch panel:").pack(side="left", padx=(0, 4))
         self.panel_combo = ttk.Combobox(frame, textvariable=self.panel_var,
                                         state="readonly", width=10)
         self.panel_combo.pack(side="left", padx=(0, 10))
@@ -665,8 +651,6 @@ class InterconnectApp:
             return
         self.path, self.data, self.dirty = path, data, False
         self.clear_results()
-        self.last_audit = None
-        self.audit_var.set(bool(self.switch_logins()))
         self.refresh()
         problems = self.problems()
         if problems:
@@ -815,30 +799,11 @@ class InterconnectApp:
             return
         self.port_window = PortVerifyWindow(self)
 
-    def open_audit(self) -> None:
-        if self.audit_window is not None:
-            self.audit_window.lift()
-            return
-        if self.running():
-            return
-        self.audit_window = AuditWindow(self)
-
     def open_discover(self) -> None:
         if self.discover_window is not None:
             self.discover_window.lift()
             return
         self.discover_window = DiscoverWindow(self)
-
-    def switch_logins(self, connections: Optional[list] = None) -> list:
-        """Switches with an address and username, optionally only those these rows are on."""
-        try:
-            all_rows = parse_inventory(self.data, "inventory")
-            logins = logins_from_inventory(self.data, all_rows)
-        except InventoryError:
-            return []
-        names = {c.switch for c in (all_rows if connections is None else connections)}
-        return [login for name, login in logins.items()
-                if name in names and login.host and login.username]
 
     def filtered(self, connections: list) -> list:
         """Apply the Switch / Patch panel filters chosen in the main window."""
@@ -949,7 +914,7 @@ class InterconnectApp:
                           for k, v in entry.items() if v not in (None, "")]
                 lines.append(f"#{index}   " + "   |   ".join(fields))
             res = self.results.get(index)
-            if res and res.port_check and res.port_check.test_port:
+            if res and res.port_check:
                 pc = res.port_check
                 lines.append(f"{res.result}: {res.message}")
                 lines.append(f"Test port: {pc.test_port}   |   Link: {pc.link or '-'}   |   "
@@ -963,10 +928,6 @@ class InterconnectApp:
                 lines.append(f"{res.result}: {res.message}")
                 lines.append(f"Ping: {ping}   |   Discovered MAC: {res.discovered_mac or '-'}"
                              f"   |   MAC check: {res.mac_check}")
-                if res.port_check:
-                    pc = res.port_check
-                    lines.append(f"Switch port: {pc.seen_switch} {pc.seen_port}   |   "
-                                 f"Link: {pc.link or '-'}   |   MACs seen: {pc.macs or 'none'}")
             else:
                 lines.extend(self.problems_for(index) or ["Not tested yet."])
         else:
@@ -1009,9 +970,6 @@ class InterconnectApp:
             "5. Use 'Verify Unused Ports' to check unused runs with a test switch: patch "
             "its ports to the runs it lists, and it reads which production switch port "
             "each run lands on (CDP/LLDP).\n\n"
-            "   With 'Check switch ports' ticked, the test then also logs into the "
-            "production switches (read-only) and checks which port each device is on - "
-            "including devices with no IP, and unused ports.\n\n"
             "6. Use 'Discover Devices' to sweep a subnet and list devices that answer but "
             "aren't in the inventory (or have moved / changed MAC), and add them.\n\n"
             "Run from a computer on the same subnet/VLAN as the devices - MACs are only "
@@ -1023,8 +981,6 @@ class InterconnectApp:
         if self.port_window is not None and self.port_window.running():
             return True
         if self.discover_window is not None and self.discover_window.running():
-            return True
-        if self.audit_window is not None and self.audit_window.running():
             return True
         return self.worker is not None and self.worker.is_alive()
 
@@ -1055,10 +1011,8 @@ class InterconnectApp:
                 "and Timeout must be greater than 0.", parent=self.root)
             return
 
-        all_connections = connections
         # Keep port verification results; pinging can't add anything to those rows.
-        verified = {i: r for i, r in self.results.items()
-                    if r.port_check is not None and r.port_check.test_port}
+        verified = {i: r for i, r in self.results.items() if r.port_check is not None}
         connections = [c for c in self.filtered(connections) if c.index not in verified]
         if not connections:
             messagebox.showinfo("Nothing to test", "No connections match the selected filters.",
@@ -1073,17 +1027,6 @@ class InterconnectApp:
         iface = self.require_iface()
         if iface is None:
             return
-        logins = self.switch_logins(connections) if self.audit_var.get() else []
-        if logins and any(login.name not in self.switch_passwords for login in logins):
-            dialog = SwitchPasswordDialog(self.root, logins, self.switch_passwords)
-            dialog.grab_set()
-            self.root.wait_window(dialog)
-            if dialog.result is None:
-                return
-            if dialog.result == "ping-only":
-                logins = []
-            else:
-                self.switch_passwords.update(dialog.result)
 
         self.clear_results()
         self.results = dict(verified)
@@ -1091,78 +1034,32 @@ class InterconnectApp:
         self.refresh()
         for conn in connections:
             self.tree.set(str(conn.index), "result", PENDING)
-        self.progress.configure(maximum=len(connections) + len(logins), value=0)
+        self.progress.configure(maximum=len(connections), value=0)
         self.set_status(f"Testing {len(connections)} connection(s)...")
         self.set_running(True)
         self.stop_event = threading.Event()
-
-        passwords = dict(self.switch_passwords)
 
         def work():
             try:
                 results = check_all(connections, count=count, timeout_s=timeout,
                                     workers=workers, progress=self.events.put,
                                     stop_event=self.stop_event, iface=iface)
-                audited = None
-                if logins and not self.stop_event.is_set():
-                    audited = self.check_switch_ports(results, all_connections, logins,
-                                                      passwords, iface)
-                    results = audited[0]
-                    for res in results:
-                        self.events.put(("result", res))
-                self.events.put(("done", results, audited))
+                self.events.put(("done", results))
             except Exception as exc:  # report anything unexpected in the GUI
-                self.events.put(("error", exc, None))
+                self.events.put(("error", exc))
 
         self.worker = threading.Thread(target=work, daemon=True)
         self.worker.start()
         self.root.after(100, self.poll)
-
-    def check_switch_ports(self, results, connections, logins, passwords, iface):
-        """Worker thread: read each switch (read-only) and add its port check to the results.
-
-        Returns (results, unlisted, errors); a switch that can't be read is listed in
-        errors and its rows keep the ping result only.
-        """
-        states, errors = {}, []
-        for login in logins:
-            if self.stop_event.is_set():
-                break
-            self.events.put(("status", f"Reading switch {login.name} ({login.host})..."))
-            try:
-                session = connect_to(login.host, login.username, passwords.get(login.name, ""),
-                                     login.device_type, login.ssh_port, iface)
-                try:
-                    states[login.name] = collect(session, login.name)
-                finally:
-                    session.close()
-            except SwitchError as exc:
-                errors.append((login.name, str(exc)))
-            self.events.put(("step",))
-        if not states:
-            return results, [], errors
-        try:
-            arp = read_arp_table(iface=iface)
-        except Exception:  # an IP hint for no-IP rows is optional
-            arp = {}
-        merged, unlisted = combine(results, connections, states, arp)
-        return merged, unlisted, errors
 
     def poll(self) -> None:
         finished = None
         try:
             while True:
                 item = self.events.get_nowait()
-                if isinstance(item, CheckResult):  # a ping result
+                if isinstance(item, CheckResult):
                     self.results[item.connection.index] = item
                     self.update_row(item)
-                    self.progress.step(1)
-                elif item[0] == "result":  # the same row with its switch port check
-                    self.results[item[1].connection.index] = item[1]
-                    self.update_row(item[1])
-                elif item[0] == "status":
-                    self.set_status(item[1])
-                elif item[0] == "step":
                     self.progress.step(1)
                 else:
                     finished = item
@@ -1174,7 +1071,7 @@ class InterconnectApp:
             return
 
         self.set_running(False)
-        kind, payload, audited = finished
+        kind, payload = finished
         if kind == "error":
             messagebox.showerror("Test failed", f"Unexpected error: {payload}", parent=self.root)
             self.set_status("Test failed")
@@ -1183,21 +1080,7 @@ class InterconnectApp:
         self.show_details()
         fails = sum(r.result == FAIL for r in payload)
         stopped = " (stopped)" if self.stop_event.is_set() else ""
-        note = ""
-        if audited is not None:
-            _results, unlisted, errors = audited
-            self.last_audit = ([r for r in payload if r.port_check is not None], unlisted)
-            if unlisted:
-                note = (f"; {len(unlisted)} switch port(s) in use but not in the inventory "
-                        "(see Audit Switch Ports...)")
-            if errors:
-                for name, _message in errors:
-                    self.switch_passwords.pop(name, None)  # ask again next time
-                messagebox.showwarning(
-                    "Switch ports not checked",
-                    "These switches couldn't be read, so their rows have the ping result "
-                    "only:\n\n" + "\n".join(f"{n}: {m}" for n, m in errors), parent=self.root)
-        self.set_status(f"Finished{stopped}: {len(payload)} tested, {fails} failed{note}")
+        self.set_status(f"Finished{stopped}: {len(payload)} tested, {fails} failed")
 
     def stop_test(self) -> None:
         if self.running():

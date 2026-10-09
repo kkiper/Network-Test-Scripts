@@ -279,9 +279,7 @@ def classify(
 
     expected = [c for c in connections if c.status != STATUS_UNUSED and c.ip]
     by_ip = {c.ip: c for c in expected}
-    # Rows without an IP can still be recognised by their MAC.
-    by_mac = {c.expected_mac: c for c in connections
-              if c.status != STATUS_UNUSED and c.expected_mac}
+    by_mac = {c.expected_mac: c for c in expected if c.expected_mac}
 
     answered = {ip for ip, ok in replies.items() if ok} | {ip for ip in arp if inside(ip)}
     answered -= local
@@ -304,9 +302,7 @@ def classify(
         elif mac and mac in by_mac:
             row = by_mac[mac]
             category = MOVED
-            message = (f"Known device now at this IP; the inventory has it at {row.ip}"
-                       if row.ip else "Known device (matched by MAC); the inventory has no "
-                       "IP for it - add this one")
+            message = f"Known device now at this IP; the inventory has it at {row.ip}"
         else:
             row = None
             category = UNKNOWN

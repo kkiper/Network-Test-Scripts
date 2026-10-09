@@ -1,4 +1,4 @@
-"""SSH sessions to the test switch and (read-only) production switches, via Netmiko."""
+"""SSH session to the test switch (via Netmiko, imported only when needed)."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ class NetmikoSession:
             import netmiko
         except ImportError as exc:
             raise SwitchError(
-                "The 'netmiko' package is needed to talk to the switches.\n"
+                "The 'netmiko' package is needed to talk to the test switch.\n"
                 "Install it with:  pip install netmiko") from exc
         self.host = host
         self.hostname = ""
@@ -38,7 +38,7 @@ class NetmikoSession:
             except OSError as exc:
                 raise SwitchError(
                     f"Could not reach {host} on SSH port {port} from the wired interface "
-                    f"({source}) - check the cabling, the IP addresses, and "
+                    f"({source}) - check the cable to the test switch, the IP addresses, and "
                     f"that SSH is enabled. ({exc})") from exc
         try:
             self.conn = netmiko.ConnectHandler(
@@ -57,7 +57,7 @@ class NetmikoSession:
             if isinstance(exc, netmiko.NetmikoTimeoutException):
                 raise SwitchError(
                     f"Could not reach {host} on SSH port {port} - check the IP address, your "
-                    "cabling, and that SSH is enabled.") from exc
+                    "cabling to the test switch, and that SSH is enabled.") from exc
             raise SwitchError(f"Could not connect to {host}: {exc}") from exc
 
     @property
@@ -110,14 +110,3 @@ def connect(settings, password: str, secret: str = "", iface=None) -> NetmikoSes
                           device_type=settings.device_type, port=settings.ssh_port,
                           source=iface.address if iface is not None else None)
 
-
-
-def connect_to(host: str, username: str, password: str, device_type: str = "cisco_xe",
-               ssh_port: int = 22, iface=None) -> NetmikoSession:
-    """Open a session to any switch (e.g. a production switch for a read-only audit)."""
-    if not host:
-        raise SwitchError("No switch address set.")
-    if not username:
-        raise SwitchError(f"No username set for {host}.")
-    return NetmikoSession(host, username, password, device_type=device_type, port=ssh_port,
-                          source=iface.address if iface is not None else None)

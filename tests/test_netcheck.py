@@ -178,16 +178,6 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual((test_switch["host"], test_switch["ports"]),
                          ("192.168.1.250", "Gi1/0/1-22"))
 
-    def test_site_files_are_valid(self):
-        site = os.path.join(os.path.dirname(__file__), "..", "examples", "site")
-        switches = {}
-        for name in ("sw-core-01.json", "sw-edge-02.json", "site_both_switches.json"):
-            conns = load_inventory(os.path.join(site, name))
-            switches[name] = {c.switch for c in conns}
-        self.assertEqual(switches["sw-core-01.json"], {"SW-CORE-01"})
-        self.assertEqual(switches["sw-edge-02.json"], {"SW-EDGE-02"})
-        self.assertEqual(switches["site_both_switches.json"], {"SW-CORE-01", "SW-EDGE-02"})
-
     def test_missing_file_explains_what_to_do(self):
         with self.assertRaises(InventoryError) as ctx:
             load_inventory("does_not_exist.json")
@@ -246,31 +236,9 @@ class CheckerTests(unittest.TestCase):
     def test_unused_and_no_ip_are_skipped_without_pinging(self):
         def boom(*a, **k):
             raise AssertionError("should not ping")
-        res = check_all([self.conn(status="unused", ip=""), self.conn(ip=""),
-                         self.conn(ip="", expected_mac=None, switch="SW-EDGE-02",
-                                   switch_port="Gi1/0/8")],
-                        ping_fn=boom, mac_fn=boom, arp_fn=dict)
-        self.assertEqual([r.result for r in res], [SKIP, SKIP, SKIP])
-        self.assertIn("isn't in this computer's ARP table. Run Discover first", res[1].message)
-        self.assertIn("No IP or MAC in the inventory, so this computer can't tell which device "
-                      "is on SW-EDGE-02 Gi1/0/8. Audit Switch Ports finds it", res[2].message)
-
-    def test_row_without_ip_is_found_by_mac(self):
-        pinged = []
-
-        def ping_fn(ip, count, timeout_s):
-            pinged.append(ip)
-            return PingResult(ip == "10.0.0.77", 2, 2, 1.0)
-        arp = {"10.0.0.77": "00:00:00:00:00:01", "10.0.0.78": "00:00:00:00:00:02"}
-        res = check_all([self.conn(ip=""), self.conn(index=2, ip="", expected_mac="00:00:00:00:00:02")],
-                        ping_fn=ping_fn, mac_fn=lambda ip: None, arp_fn=lambda: arp)
-        self.assertEqual(sorted(pinged), ["10.0.0.77", "10.0.0.78"])
-        self.assertEqual((res[0].result, res[0].mac_check, res[0].discovered_mac),
-                         (PASS, MAC_MATCH, "00:00:00:00:00:01"))
-        self.assertEqual(res[0].message, "Found by MAC at 10.0.0.77 (no IP in the inventory - "
-                                         "add ip 10.0.0.77 to the inventory)")
-        self.assertEqual(res[1].result, WARN)
-        self.assertIn("MAC seen at 10.0.0.78 in the ARP table but no ping reply", res[1].message)
+        res = check_all([self.conn(status="unused", ip=""), self.conn(ip="")],
+                        ping_fn=boom, mac_fn=boom)
+        self.assertEqual([r.result for r in res], [SKIP, SKIP])
 
 
 class StopTests(unittest.TestCase):

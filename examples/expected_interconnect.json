@@ -1,5 +1,5 @@
 {
-  "description": "Expected physical interconnect. One entry per patch panel port. status: 'connected' = a device should be patched here; 'unused' = port should be empty. expected_mac may be left out - run with --write-baseline to capture it. far_end (optional) says where to plug the test switch in to reach an unused run. Fiber runs: media 'fiber' and expected_speed '10G' are tested on the test switch's SFP+ ports. The test switch's production link (PP-A:23) and Camera-05 on the daisy-chained SW-EDGE-02 show the laptop -> test switch -> SW-CORE-01 -> SW-EDGE-02 setup. switches (optional): management IP and read-only username of each production switch, for the Switch Port Audit (passwords are never saved).",
+  "description": "Expected physical interconnect. One entry per patch panel port. status: 'connected' = a device should be patched here; 'unused' = port should be empty. expected_mac may be left out - run with --write-baseline to capture it. far_end (optional) says where to plug the test switch in to reach an unused run. Fiber runs: media 'fiber' and expected_speed '10G' are tested on the test switch's SFP+ ports. The test switch's production link (PP-A:23) and Camera-05 on the daisy-chained SW-EDGE-02 show the laptop -> test switch -> SW-CORE-01 -> SW-EDGE-02 setup.",
   "test_switch": {
     "host": "192.168.1.250",
     "username": "admin",
@@ -7,16 +7,6 @@
     "fiber_ports": "Te1/1/1-2",
     "cdp_timeout": 90,
     "cable_test": false
-  },
-  "switches": {
-    "SW-CORE-01": {
-      "host": "192.168.1.2",
-      "username": "netcheck-ro"
-    },
-    "SW-EDGE-02": {
-      "host": "192.168.1.3",
-      "username": "netcheck-ro"
-    }
   },
   "connections": [
     {
