@@ -178,6 +178,16 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual((test_switch["host"], test_switch["ports"]),
                          ("192.168.1.250", "Gi1/0/1-22"))
 
+    def test_site_files_are_valid(self):
+        site = os.path.join(os.path.dirname(__file__), "..", "examples", "site")
+        switches = {}
+        for name in ("sw-core-01.json", "sw-edge-02.json", "site_both_switches.json"):
+            conns = load_inventory(os.path.join(site, name))
+            switches[name] = {c.switch for c in conns}
+        self.assertEqual(switches["sw-core-01.json"], {"SW-CORE-01"})
+        self.assertEqual(switches["sw-edge-02.json"], {"SW-EDGE-02"})
+        self.assertEqual(switches["site_both_switches.json"], {"SW-CORE-01", "SW-EDGE-02"})
+
     def test_missing_file_explains_what_to_do(self):
         with self.assertRaises(InventoryError) as ctx:
             load_inventory("does_not_exist.json")

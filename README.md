@@ -349,6 +349,17 @@ To make one, either:
 - start the GUI (`python interconnect_gui.py`), use **Add Connection** for each patch-panel
   port, then **File > Save As**.
 
+For the setup in the diagram above, [`examples/site/`](examples/site) has a starting point.
+Every file includes the test switch settings, so the test switch needs no inventory file of its own.
+
+| File | Covers | Use it for |
+|------|--------|------------|
+| `sw-core-01.json` | SW-CORE-01 only: the production link, the uplink, an unused run and both fiber channels | Testing just the production switch |
+| `sw-edge-02.json` | SW-EDGE-02 only: the uplink, Camera-05 and an unused run | Testing just the daisy-chained switch |
+| `site_both_switches.json` | Both switches together | Testing everything in one run, and for **Discover**. With a single-switch file, Discover reports the other switch's devices as unknown. |
+
+Rows whose notes say `EXAMPLE` are placeholders: replace them with your real devices and panels.
+
 To try the tools first, use the example file itself, e.g.
 `python port_verify.py examples/expected_interconnect.json ...`. Its switch names (`SW-CORE-01`
 etc.) are made up, though, so port verification against your real switches will report them
