@@ -168,6 +168,15 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(self.found[0].ip, "192.168.1.200")
         self.assertEqual(self.found[-1].category, EXPECTED)
 
+    def test_row_without_ip_matched_by_mac(self):
+        from netcheck.inventory import Connection
+        rows = [Connection(index=1, switch="SW-EDGE-02", switch_port="Gi1/0/8",
+                           device="HMS 2 - CH 2", expected_mac="00:1a:2b:3c:4d:88")]
+        found = classify(rows, parse_subnets("192.168.1.0/24"), {"192.168.1.88": True},
+                         {"192.168.1.88": "00:1a:2b:3c:4d:88"})
+        self.assertEqual((found[0].category, found[0].index), (MOVED, 1))
+        self.assertIn("the inventory has no IP for it", found[0].message)
+
     def test_details(self):
         unknown = self.by_ip["192.168.1.200"]
         self.assertEqual((unknown.mac, unknown.reply, unknown.vendor),

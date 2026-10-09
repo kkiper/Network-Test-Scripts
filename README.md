@@ -489,7 +489,19 @@ Check the baseline file is right, then use it as your expected interconnect from
 | PASS | Device replied to ping and its MAC matches (or was discovered, when no MAC was expected). |
 | FAIL | Device didn't reply and no MAC was seen, **or** a *different* MAC answered for that IP (wrong device / IP conflict). |
 | WARN | Device replied but its MAC couldn't be resolved (other subnet, or it's this machine's own IP); or it didn't reply to ping but did answer ARP (ICMP probably firewalled). |
-| SKIP | `unused` port, or no IP to test. Unused runs are checked with the test switch instead (see above). |
+| SKIP | `unused` port (checked with the test switch instead, see above), or a `connected` row the laptop can't find: no IP, and no MAC it has seen. The message says what to do. |
+
+**Devices without an IP in the inventory.** Ping Test needs something to look for:
+
+- **`expected_mac` but no `ip`:** the device is found by its MAC in the laptop's ARP table and pinged
+  at the IP found there ("Found by MAC at 192.168.1.77"). The ARP table only holds devices the laptop
+  has talked to, so run **Discover** first; its subnet sweep fills the table. Discover also lists the
+  device as MOVED with "the inventory has no IP for it".
+- **Neither `ip` nor `expected_mac`:** nothing on the laptop can tell which device is on, say,
+  SW-EDGE-02 Gi1/0/8. Only the switch knows, so use the
+  [Switch Port Audit](#switch-port-audit-needs-read-only-access). It reads that port's link and MAC
+  straight from the switch's MAC table and fills in the MAC (needs read-only access). Without that,
+  run Discover, identify the device among the unknown ones (vendor, MAC label), and add its IP or MAC to the row.
 
 ## Tests
 
