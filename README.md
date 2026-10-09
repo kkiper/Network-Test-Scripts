@@ -309,7 +309,28 @@ tool. Ask the network owner for it; see
 | `show mac address-table` etc. allowed at privilege 1 | Yes by default on IOS XE |
 | LLDP (`lldp run`) | Optional: only to hear LLDP that devices send themselves |
 
-**In the GUI**, click **Audit Switch Ports...**. Tick each switch to audit and enter its
+**As part of the Ping Test (F5).** When the inventory has a `switches` section, **Check switch
+ports** next to the Ping Test button is ticked. The first F5 asks for each switch's password,
+which is kept in memory only until you close the program. Each run then:
+
+1. **Pings** every device first. Each reply also makes the switch learn (or refresh) that
+   device's MAC, and the ping gives the MAC that answers at each IP.
+2. **Reads each switch** (read-only), then checks every row's port. When a row has no
+   `expected_mac`, the MAC that answered its ping is looked for on the port, so a device found
+   at its IP is also confirmed to be on the right port.
+3. **Combines** the two into one result per row, and the worse of the two wins. Example:
+   `Ping: Reachable, MAC matches. Switch SW-CORE-01 Gi1/0/1: Expected MAC ... seen on this port`.
+   - **Rows with no IP, and `unused` rows:** checked by the switch alone. If the MAC on the port
+     is in the laptop's ARP table, the result says which IP it answers at.
+   - **Uplink rows whose `device` names the neighbouring switch** (e.g.
+     `"SW-EDGE-02 (daisy-chain uplink)"`): PASS when CDP/LLDP shows that switch on the port.
+   - **Switches with no address, or that can't be logged into:** their rows keep the ping result
+     only, and a warning says which switch failed.
+
+Untick **Check switch ports** for a ping-only run. The ports in use that aren't in the inventory
+are listed in **Audit Switch Ports...**, without logging in again.
+
+**On its own**, click **Audit Switch Ports...**. Tick each switch to audit and enter its
 management IP, read-only username and password (never saved). Then press **Run Audit**. The
 results also appear in the main window. Ports with a link or traffic that the inventory
 doesn't list are shown as **UNLISTED**; **Add Selected Unlisted to Inventory** adds them as new rows.

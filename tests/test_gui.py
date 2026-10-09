@@ -408,6 +408,62 @@ class AuditGuiTests(GuiTests):
             window.close()
             self.assertIsNone(self.app.audit_window)
 
+    def test_ping_test_checks_switch_ports(self):
+        from tests.test_switchaudit import core_session
+        session = core_session()
+        calls = []
+
+        def fake_connect(host, username, password, device_type, ssh_port, iface):
+            calls.append((host, username, password))
+            return session
+
+        class FakePasswordDialog:
+            def __init__(self, parent, logins, known):
+                self.names = [login.name for login in logins]
+                self.result = {"SW-CORE-01": "secret"}
+
+            def grab_set(self):
+                pass
+
+        self.app.data["switches"] = {"SW-CORE-01": {"host": "192.168.1.2",
+                                                    "username": "netcheck-ro"}}
+        self.app.audit_var.set(True)
+        with mock.patch.object(gui, "connect_to", fake_connect), \
+                mock.patch.object(gui, "SwitchPasswordDialog", FakePasswordDialog), \
+                mock.patch.object(self.root, "wait_window"), \
+                mock.patch.object(gui, "read_arp_table", return_value={}):
+            self.app.run_test()
+            self.wait_for_run()
+            self.assertEqual(calls, [("192.168.1.2", "netcheck-ro", "secret")])
+            self.assertEqual(self.app.switch_passwords, {"SW-CORE-01": "secret"})
+            self.assertNotIn("secret", json.dumps(self.app.data))
+            # Ping and switch port in one result.
+            self.assertEqual(self.app.tree.set("1", "result"), "PASS")
+            self.assertIn("Switch SW-CORE-01 Gi1/0/1: Expected MAC", self.app.tree.set("1", "message"))
+            self.assertIn("answering at 192.168.1.11) seen on this port",
+                          self.app.tree.set("3", "message"))
+            # Unused rows are checked by the switch: Gi1/0/6 has a device on it.
+            self.assertEqual(self.app.tree.set("5", "result"), "PASS")
+            self.assertEqual(self.app.tree.set("6", "result"), "FAIL")
+            self.assertIsNone(self.app.results[7].port_check)  # SW-ACCESS-01: ping only
+            self.assertIn("switch port(s) in use but not in the inventory",
+                          self.app.status.cget("text"))
+
+            # The audit window shows the same results without logging in again.
+            self.app.open_audit()
+            window = self.app.audit_window
+            self.assertTrue(any(window.tree.set(i, "result") == "UNLISTED"
+                                for i in window.tree.get_children()))
+            self.assertEqual(window.switch_vars["SW-CORE-01"]["password"].get(), "secret")
+            window.close()
+
+            # A second run asks for no password and checks the ports again.
+            session.sent.clear()
+            self.app.run_test()
+            self.wait_for_run()
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(self.app.tree.set("6", "result"), "FAIL")
+
     # Don't re-run the inherited ping tests in this class.
     test_run_accept_and_save = test_filter_by_switch = None
     test_invalid_entry_blocks_run = test_dialog_rejects_duplicates = None

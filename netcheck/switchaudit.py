@@ -18,7 +18,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from .checker import (
-    FAIL, MAC_DISCOVERED, MAC_MATCH, MAC_MISMATCH, MAC_NA, MAC_UNRESOLVED, PASS, WARN,
+    FAIL, MAC_DISCOVERED, MAC_MATCH, MAC_MISMATCH, MAC_NA, MAC_UNRESOLVED, PASS, SKIP, WARN,
     CheckResult, PortCheck,
 )
 from .cisco import (
@@ -159,9 +159,14 @@ def _neighbor_text(state: SwitchState, port: str) -> str:
                              for n in state.neighbors.get(port, [])}))
 
 
-def audit(connections: list[Connection], states: dict[str, SwitchState]
+def audit(connections: list[Connection], states: dict[str, SwitchState],
+          seen_macs: Optional[dict[int, str]] = None,
           ) -> tuple[list[CheckResult], list[Unlisted]]:
-    """Compare the switches' tables with the inventory rows on those switches."""
+    """Compare the switches' tables with the inventory rows on those switches.
+
+    ``seen_macs`` (row index -> MAC that answered at the row's IP, from a ping
+    test) stands in for a row's missing expected_mac, so the port is checked too.
+    """
     where_is: dict[str, tuple[str, str]] = {}  # mac -> (switch, port), uplinks excluded
     for name, state in states.items():
         for port in state.macs:
@@ -177,7 +182,8 @@ def audit(connections: list[Connection], states: dict[str, SwitchState]
         if state is None or not port:
             continue
         listed[conn.switch].add(port)
-        results.append(_audit_row(conn, state, port, where_is))
+        results.append(_audit_row(conn, state, port, where_is,
+                                  (seen_macs or {}).get(conn.index)))
 
     unlisted = []
     for name, state in states.items():
@@ -198,7 +204,8 @@ def _port_key(port: str) -> list:
 
 
 def _audit_row(conn: Connection, state: SwitchState, port: str,
-               where_is: dict[str, tuple[str, str]]) -> CheckResult:
+               where_is: dict[str, tuple[str, str]],
+               seen_mac: Optional[str] = None) -> CheckResult:
     status = state.statuses.get(port)
     uplink = state.uplinks.get(port)
     macs = [] if uplink else _macs_on(state, port)
@@ -207,7 +214,9 @@ def _audit_row(conn: Connection, state: SwitchState, port: str,
                       macs=", ".join(macs))
     neighbor = _neighbor_text(state, port)
     up = status is not None and status.link_up
-    expected = conn.expected_mac
+    expected = conn.expected_mac or seen_mac
+    label = (f"Expected MAC {expected}" if conn.expected_mac
+             else f"MAC {expected} (answering at {conn.ip})")
     discovered: Optional[str] = None
     mac_check = MAC_NA
 
@@ -221,18 +230,21 @@ def _audit_row(conn: Connection, state: SwitchState, port: str,
             message += f", neighbour {neighbor}" if neighbor else ""
         else:
             result, message = PASS, f"Empty as expected (link {check.link})"
+    elif uplink and _expected_neighbor(conn, state, port):
+        result = PASS
+        message = f"Uplink to {_expected_neighbor(conn, state, port)} as expected"
     elif uplink:
         result, message = WARN, (f"This port is an {uplink}; its MACs belong to devices "
                                  "further away, so the device can't be confirmed here")
     elif expected and expected in macs:
         result, message, discovered, mac_check = (
-            PASS, f"Expected MAC {expected} seen on this port", expected, MAC_MATCH)
+            PASS, f"{label} seen on this port", expected, MAC_MATCH)
         if len(macs) > 1:
             message += f" (also {', '.join(m for m in macs if m != expected)})"
     elif expected and expected in where_is:
         sw, other = where_is[expected]
         result, mac_check = FAIL, MAC_MISMATCH
-        message = f"Expected MAC {expected} is on {sw} {short_interface(other)}, not here"
+        message = f"{label} is on {sw} {short_interface(other)}, not here"
         if macs:
             message += f"; this port has {', '.join(macs)}"
     elif not up:
@@ -263,6 +275,63 @@ def _audit_row(conn: Connection, state: SwitchState, port: str,
     if neighbor and conn.status != STATUS_UNUSED and not uplink:
         message += f"; neighbour {neighbor}"
     return CheckResult(conn, result, None, discovered, mac_check, message, port_check=check)
+
+
+def _expected_neighbor(conn: Connection, state: SwitchState, port: str) -> str:
+    """The neighbouring switch on an uplink port, if the row's device names it."""
+    for neighbor in state.neighbors.get(port, []):
+        name = normalize_hostname(neighbor.device_id)
+        if neighbor.is_switch and name and name in conn.device.lower():
+            return name
+    return ""
+
+
+# ------------------------------------------------------- with a ping test
+
+SEVERITY = {SKIP: 0, PASS: 1, WARN: 2, FAIL: 3}
+
+
+def merge(ping_result: CheckResult, port_result: Optional[CheckResult]) -> CheckResult:
+    """One row's ping test and switch port result as a single result (the worse one wins)."""
+    if port_result is None:
+        return ping_result
+    if ping_result.result == SKIP:
+        return port_result  # unused, or no IP: the switch is the only check
+    pc = port_result.port_check
+    where = f"{pc.seen_switch} {pc.seen_port}" if pc else "switch"
+    result = max(ping_result.result, port_result.result, key=SEVERITY.__getitem__)
+    return CheckResult(ping_result.connection, result, ping_result.ping,
+                       ping_result.discovered_mac or port_result.discovered_mac,
+                       ping_result.mac_check,
+                       f"Ping: {ping_result.message}. Switch {where}: {port_result.message}",
+                       port_check=pc)
+
+
+def combine(ping_results: list[CheckResult], connections: list[Connection],
+            states: dict[str, SwitchState], arp: Optional[dict[str, str]] = None,
+            ) -> tuple[list[CheckResult], list[Unlisted]]:
+    """Add the switch port check to each ping test result.
+
+    ``connections`` is the whole inventory, so rows that weren't pinged (filters)
+    aren't reported as unlisted ports. ``arp`` (ip -> mac, this computer's ARP
+    table) gives an IP for rows that have none when their port's MAC is in it.
+    """
+    seen = {r.connection.index: r.discovered_mac for r in ping_results
+            if r.discovered_mac and r.connection.ip}
+    port_results, unlisted = audit(connections, states, seen)
+    by_index = {r.connection.index: r for r in port_results}
+    ip_of_mac: dict[str, str] = {}
+    for ip, mac in sorted((arp or {}).items()):
+        ip_of_mac.setdefault(mac, ip)
+    merged = []
+    for res in ping_results:
+        port = by_index.get(res.connection.index)
+        if (port is not None and not res.connection.ip and port.discovered_mac
+                and port.discovered_mac in ip_of_mac):
+            port.message += (f"; it answers at {ip_of_mac[port.discovered_mac]} - "
+                             "add this IP to the inventory")
+        merged.append(merge(res, port))
+    return merged, unlisted
 
 
 def new_entry(item: Unlisted) -> dict:

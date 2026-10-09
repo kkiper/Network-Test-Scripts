@@ -54,6 +54,9 @@ class AuditWindow(tk.Toplevel):
         self._build_table()
         self._build_actions()
         self.protocol("WM_DELETE_WINDOW", self.close)
+        if app.last_audit is not None:  # from the last Ping Test with switch ports
+            self.results, self.unlisted = app.last_audit
+            self.show()
 
     # ------------------------------------------------------------------ layout
 
@@ -88,7 +91,7 @@ class AuditWindow(tk.Toplevel):
                 "enabled": tk.BooleanVar(value=bool(login.host)),
                 "host": tk.StringVar(value=login.host),
                 "username": tk.StringVar(value=login.username),
-                "password": tk.StringVar(),
+                "password": tk.StringVar(value=self.app.switch_passwords.get(login.name, "")),
             }
             self.switch_vars[login.name] = values
             ttk.Checkbutton(frame, variable=values["enabled"]).grid(row=row, column=0)
@@ -223,6 +226,7 @@ class AuditWindow(tk.Toplevel):
                     messagebox.showerror("Switch Port Audit", event[1], parent=self)
                 else:
                     _kind, self.results, self.unlisted = event
+                    self.app.last_audit = (self.results, self.unlisted)
                     self.app.add_results(self.results)
                     self.show()
         except queue.Empty:
@@ -314,4 +318,57 @@ class AuditWindow(tk.Toplevel):
                                 parent=self)
             return
         self.app.audit_window = None
+        self.destroy()
+
+
+class SwitchPasswordDialog(tk.Toplevel):
+    """Ask for the read-only passwords of the switches a Ping Test will also read.
+
+    ``result`` is {switch name: password} for Run, "ping-only", or None (cancelled).
+    """
+
+    def __init__(self, parent: tk.Misc, logins: list[SwitchLogin], known: dict[str, str]):
+        super().__init__(parent)
+        self.title("Check switch ports")
+        self.transient(parent)
+        self.resizable(False, False)
+        self.result = None
+        frame = ttk.Frame(self, padding=12)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, wraplength=520, justify="left", text=(
+            "After pinging, the test logs into these switches with their read-only "
+            "accounts and checks which port each device is on (only 'show' commands). "
+            "Passwords are kept only until you close the program.")).grid(
+            row=0, column=0, columnspan=4, sticky="w", pady=(0, 10))
+        for col, text in enumerate(("Switch", "Address", "Username", "Password")):
+            ttk.Label(frame, text=text, font=("TkDefaultFont", 9, "bold")).grid(
+                row=1, column=col, sticky="w", padx=(0, 12))
+        self.passwords: dict[str, tk.StringVar] = {}
+        first = None
+        for row, login in enumerate(logins, start=2):
+            ttk.Label(frame, text=login.name).grid(row=row, column=0, sticky="w", padx=(0, 12))
+            ttk.Label(frame, text=login.host).grid(row=row, column=1, sticky="w", padx=(0, 12))
+            ttk.Label(frame, text=login.username).grid(row=row, column=2, sticky="w",
+                                                       padx=(0, 12))
+            var = tk.StringVar(value=known.get(login.name, ""))
+            entry = ttk.Entry(frame, textvariable=var, show="•", width=18)
+            entry.grid(row=row, column=3, sticky="w", pady=2)
+            first = first or entry
+            self.passwords[login.name] = var
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=len(logins) + 2, column=0, columnspan=4, sticky="e", pady=(12, 0))
+        ttk.Button(buttons, text="Run", style="Run.TButton", command=self._run).pack(side="left")
+        ttk.Button(buttons, text="Ping Only", command=self._ping_only).pack(side="left", padx=4)
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="left")
+        self.bind("<Return>", lambda _e: self._run())
+        self.bind("<Escape>", lambda _e: self.destroy())
+        if first is not None:
+            first.focus_set()
+
+    def _run(self) -> None:
+        self.result = {name: var.get() for name, var in self.passwords.items()}
+        self.destroy()
+
+    def _ping_only(self) -> None:
+        self.result = "ping-only"
         self.destroy()

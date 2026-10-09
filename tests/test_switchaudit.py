@@ -11,8 +11,10 @@ from netcheck import auditcli
 from netcheck.checker import FAIL, PASS, WARN
 from netcheck.cisco import parse_cdp_neighbors_detail, parse_mac_address_table
 from netcheck.inventory import Connection, InventoryError
+from netcheck.checker import MAC_DISCOVERED, SKIP, check_all
+from netcheck.ping import PingResult
 from netcheck.switchaudit import (
-    AUDIT_COMMANDS, audit, collect, find_uplinks, logins_from_inventory, new_entry,
+    AUDIT_COMMANDS, audit, collect, combine, find_uplinks, logins_from_inventory, new_entry,
 )
 from tests.test_netif import patch_wired
 from tests.test_portverify import STATUS_HEADER, cdp_entry, status_line
@@ -184,6 +186,70 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(logins["SW-CORE-01"].to_dict(), {"host": "192.168.1.2", "username": "ro"})
         with self.assertRaises(InventoryError):
             logins_from_inventory({"switches": ["SW-CORE-01"]}, [])
+
+
+class CombineTests(unittest.TestCase):
+    """A ping test followed by the switch port check, merged per row."""
+
+    def setUp(self):
+        self.states = {"SW-CORE-01": collect(core_session(), "SW-CORE-01"),
+                       "SW-EDGE-02": collect(edge_session(), "SW-EDGE-02")}
+        self.rows = [
+            row(1, "Gi1/0/1", device="Firewall-01", ip="192.168.1.1",
+                expected_mac="00:1a:2b:3c:4d:01"),
+            row(2, "Gi1/0/3", device="Server-APP-01", ip="192.168.1.11"),  # no MAC recorded
+            row(3, "Gi1/0/7", device="Server-DB-01", ip="192.168.1.10"),   # no MAC recorded
+            row(4, "Gi1/0/9", device="HMS 2 - CH 2"),                      # no IP, no MAC
+            row(5, "Gi1/0/5", status="unused"),
+            row(6, "Gi1/0/24", device="SW-EDGE-02 (daisy-chain uplink)", ip="192.168.1.3"),
+            row(7, "Gi1/0/1", switch="SW-EDGE-02", device="SW-CORE-01 uplink", ip="192.168.1.2"),
+            row(8, "Gi1/0/4", switch="SW-EDGE-02", device="Camera-05", ip="192.168.1.60"),
+        ]
+        arp = {"192.168.1.1": "00:1a:2b:3c:4d:01", "192.168.1.11": "00:1a:2b:3c:4d:11",
+               "192.168.1.10": "00:1a:2b:3c:4d:99", "192.168.1.3": "00:1a:2b:3c:4d:e2",
+               "192.168.1.2": "00:1a:2b:3c:4d:c1", "192.168.1.60": "00:1a:2b:3c:4d:60",
+               "192.168.1.70": "00:1a:2b:3c:4d:70"}
+        pings = check_all(self.rows, ping_fn=lambda ip, count, timeout_s: PingResult(True, 2, 2, 1.0),
+                          mac_fn=arp.get, arp_fn=dict)
+        results, self.unlisted = combine(pings, self.rows, self.states, arp)
+        self.by_row = {r.connection.index: r for r in results}
+
+    def test_ping_mac_is_checked_on_the_port(self):
+        app = self.by_row[2]
+        self.assertEqual((app.result, app.mac_check), (PASS, MAC_DISCOVERED))
+        self.assertIn("Switch SW-CORE-01 Gi1/0/3: MAC 00:1a:2b:3c:4d:11 (answering at "
+                      "192.168.1.11) seen on this port", app.message)
+        # 192.168.1.10 answers with :99, which the switch has on Gi1/0/2, not Gi1/0/7.
+        db = self.by_row[3]
+        self.assertEqual(db.result, FAIL)
+        self.assertIn("MAC 00:1a:2b:3c:4d:99 (answering at 192.168.1.10) is on SW-CORE-01 "
+                      "Gi1/0/2, not here", db.message)
+        self.assertEqual(self.by_row[1].result, PASS)
+        self.assertTrue(self.by_row[1].message.startswith("Ping: Reachable, MAC matches. Switch"))
+
+    def test_rows_without_ip_and_unused_rows_are_checked_by_the_switch(self):
+        hms = self.by_row[4]
+        self.assertEqual((hms.result, hms.ping, hms.discovered_mac),
+                         (PASS, None, "00:1a:2b:3c:4d:70"))
+        self.assertIn("it answers at 192.168.1.70 - add this IP to the inventory", hms.message)
+        self.assertEqual(self.by_row[5].result, PASS)
+        self.assertEqual(self.by_row[5].message, "Empty as expected (link down)")
+
+    def test_uplinks_named_in_the_row_pass(self):
+        self.assertEqual(self.by_row[6].result, PASS)
+        self.assertIn("Uplink to sw-edge-02 as expected", self.by_row[6].message)
+        self.assertIn("Uplink to sw-core-01 as expected", self.by_row[7].message)
+        # The camera's MAC is learned on SW-CORE-01's uplink too, but found on SW-EDGE-02.
+        self.assertIn("Switch SW-EDGE-02 Gi1/0/4: MAC 00:1a:2b:3c:4d:60 (answering at "
+                      "192.168.1.60) seen on this port", self.by_row[8].message)
+
+    def test_switch_not_read_keeps_ping_result(self):
+        pings = check_all([self.rows[0], row(9, "Gi1/0/8")],
+                          ping_fn=lambda ip, count, timeout_s: PingResult(True, 2, 2, 1.0),
+                          mac_fn=lambda ip: "00:1a:2b:3c:4d:01", arp_fn=dict)
+        results, _ = combine(pings, self.rows, {}, {})
+        self.assertEqual([r.port_check for r in results], [None, None])
+        self.assertEqual(results[1].result, SKIP)
 
 
 class CliTests(unittest.TestCase):
